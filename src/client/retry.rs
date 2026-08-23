@@ -1,0 +1,64 @@
+use std::{sync::Arc, time::Duration};
+
+use rand::{RngExt, rng};
+
+use crate::Error;
+
+#[derive(Debug, Clone, Copy)]
+pub enum RetryDecision {
+    RetryAfter(Duration),
+    Abort,
+}
+
+pub type RetryCondition = Arc<dyn Fn(&Error, usize) -> RetryDecision + Send + Sync>;
+
+#[derive(Clone)]
+pub struct RetryPolicy {
+    pub max_attempts: usize,
+    condition: RetryCondition,
+}
+
+impl RetryPolicy {
+    pub fn new(
+        max_attempts: usize,
+        condition: impl Fn(&Error, usize) -> RetryDecision + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            max_attempts,
+            condition: Arc::new(condition),
+        }
+    }
+
+    pub fn default_conditions(max_attempts: usize) -> Self {
+        Self::new(max_attempts, |error, attempt| {
+            let backoff =
+                exponential_backoff(attempt, Duration::from_secs(2), Duration::from_secs(60));
+            match error {
+                Error::Connect(_) | Error::StreamInterrupted(_) => {
+                    RetryDecision::RetryAfter(backoff)
+                }
+                Error::Status { retry_after, .. } => {
+                    RetryDecision::RetryAfter(retry_after.unwrap_or(backoff))
+                }
+                Error::LinkExpired { .. } | Error::InvalidContentRange { .. } => {
+                    RetryDecision::RetryAfter(backoff)
+                }
+                Error::SizeMismatch { .. } | Error::ChecksumMismatch { .. } => {
+                    RetryDecision::RetryAfter(backoff)
+                }
+                _ => RetryDecision::Abort,
+            }
+        })
+    }
+
+    pub(crate) fn decide(&self, error: &Error, attempt: usize) -> RetryDecision {
+        (self.condition)(error, attempt)
+    }
+}
+
+fn exponential_backoff(attempt: usize, base: Duration, max: Duration) -> Duration {
+    let attempt = attempt.max(1) as i32;
+    let jitter = rng().random_range(0.75..1.25);
+    let secs = base.as_secs_f64() * 2f64.powi(attempt - 1) * jitter;
+    Duration::from_secs_f64(secs.min(max.as_secs_f64()))
+}
