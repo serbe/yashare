@@ -1,4 +1,3 @@
-#[macro_export]
 macro_rules! field_enum {
     (
         $vis:vis enum $name:ident {
@@ -41,7 +40,7 @@ macro_rules! field_enum {
 
 #[cfg(test)]
 mod tests {
-    use crate::transport::FieldPath;
+    use crate::transport::fields::FieldPath;
 
     field_enum! {
         enum Inner {

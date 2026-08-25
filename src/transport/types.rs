@@ -1,12 +1,18 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_API_BASE: &str = "https://cloud-api.yandex.net/v1/disk/public/resources";
-const DEFAULT_USER_AGENT: &str = concat!("yashare/", env!("CARGO_PKG_VERSION"));
 const DEFAULT_PAGE_SIZE: usize = 1000;
 
+#[derive(Debug, Clone)]
+pub enum ChecksumSpec {
+    Md5(String),
+    Sha256(String),
+    Both { md5: String, sha256: String },
+    SizeOnly,
+}
+
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
-pub struct ResourceResponse {
+pub struct Resource {
     pub name: Option<String>,
     #[serde(rename = "type")]
     pub type_field: Option<String>,
@@ -29,7 +35,7 @@ pub struct ResourceResponse {
     pub revision: Option<i64>,
     pub comment_ids: Option<CommentIds>,
     pub exif: Option<Exif>,
-    pub antivirus_status: Option<AntivirusStatus>,
+    pub antivirus_status: Option<String>,
     pub photoslice_time: Option<Timestamp>,
     pub sizes: Option<Vec<PhotoSize>>,
     pub views_count: Option<i64>,
@@ -40,8 +46,8 @@ pub struct Embedded {
     pub total: Option<u64>,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
-    pub path: Option<u64>,
-    pub sort: Option<u64>,
+    pub path: Option<String>,
+    pub sort: Option<String>,
     pub items: Option<Vec<Item>>,
     pub public_key: Option<String>,
 }
@@ -56,6 +62,20 @@ pub struct Item {
     pub md5: Option<String>,
     pub sha256: Option<String>,
     pub file: Option<String>,
+}
+
+impl Item {
+    pub fn checksum_spec(&self) -> ChecksumSpec {
+        match (&self.md5, &self.sha256) {
+            (Some(md5), Some(sha256)) => ChecksumSpec::Both {
+                md5: md5.clone(),
+                sha256: sha256.clone(),
+            },
+            (Some(md5), None) => ChecksumSpec::Md5(md5.clone()),
+            (None, Some(sha256)) => ChecksumSpec::Sha256(sha256.clone()),
+            (None, None) => ChecksumSpec::SizeOnly,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -74,18 +94,9 @@ pub struct CommentIds {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Exif {
     pub date_time: Option<String>,
-    pub gps_latitude: Option<GpsLatitude>,
-    pub gps_longitude: Option<GpsLongitude>,
+    pub gps_latitude: Option<String>,
+    pub gps_longitude: Option<String>,
 }
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct GpsLatitude {}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct GpsLongitude {}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct AntivirusStatus {}
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct PhotoSize {
@@ -94,10 +105,17 @@ pub struct PhotoSize {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct DownloadResponse {
-    pub method: Option<String>,
-    pub href: Option<String>,
-    pub templated: Option<bool>,
+pub struct Link {
+    pub method: String,
+    pub href: String,
+    pub templated: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ResponseError {
+    pub message: String,
+    pub description: String,
+    pub error: String,
 }
 
 #[cfg(test)]

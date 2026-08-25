@@ -1,5 +1,3 @@
-use crate::field_enum;
-
 field_enum! {
     pub enum ItemField {
         leaf {

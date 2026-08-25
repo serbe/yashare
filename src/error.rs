@@ -5,11 +5,26 @@ use reqwest::StatusCode;
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    #[error("{error}: {message} {description}")]
+    Api {
+        status: StatusCode,
+        error: String,
+        message: String,
+        description: String,
+        retry_after: Option<Duration>,
+    },
+
     #[error("resource not found: {0}")]
     NotFound(String),
 
     #[error("public link must point to a folder, got: {0}")]
     NotAFolder(String),
+
+    #[error("create client failed")]
+    CreateClient,
+
+    #[error("Url not resolved")]
+    UrlNotResolved,
 
     #[error("connection failed")]
     Connect(#[source] reqwest::Error),
@@ -39,8 +54,11 @@ pub enum Error {
     #[error("checksum verification failed for {path}")]
     ChecksumMismatch { path: PathBuf },
 
-    #[error("json error")]
-    Json(#[from] serde_json::Error),
+    #[error("response body interrupted")]
+    BodyInterrupted(#[source] reqwest::Error),
+
+    #[error("failed to decode JSON response: {0}")]
+    Json(#[source] serde_json::Error),
 
     #[error("I/O error for `{path}`: {source}")]
     Io {
@@ -52,8 +70,11 @@ pub enum Error {
     #[error("invalid path component: {0}")]
     InvalidPath(String),
 
+    #[error("invalid Reqwest HTTP header value: {0}")]
+    InvalidReqwestHeader(#[from] reqwest::header::InvalidHeaderValue),
+
     #[error("invalid HTTP header value: {0}")]
-    InvalidHeader(#[from] reqwest::header::InvalidHeaderValue),
+    InvalidHeader(String),
 
     #[error("api request failed after retries: {0}")]
     RetriesExhausted(String),
@@ -66,6 +87,9 @@ pub enum Error {
 
     #[error("operation was cancelled")]
     Cancelled,
+
+    #[error("failed to parse URL: {0}")]
+    UrlParse(#[from] url::ParseError),
 }
 
 pub fn io_error(path: impl Into<PathBuf>, source: io::Error) -> Error {
