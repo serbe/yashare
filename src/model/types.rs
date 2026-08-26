@@ -1,15 +1,7 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_PAGE_SIZE: usize = 1000;
-
-#[derive(Debug, Clone)]
-pub enum ChecksumSpec {
-    Md5(String),
-    Sha256(String),
-    Both { md5: String, sha256: String },
-    SizeOnly,
-}
+use crate::checksum::ChecksumSpec;
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Resource {
@@ -73,7 +65,7 @@ impl Item {
             },
             (Some(md5), None) => ChecksumSpec::Md5(md5.clone()),
             (None, Some(sha256)) => ChecksumSpec::Sha256(sha256.clone()),
-            (None, None) => ChecksumSpec::SizeOnly,
+            (None, None) => ChecksumSpec::None,
         }
     }
 }
@@ -112,7 +104,7 @@ pub struct Link {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ResponseError {
+pub struct ApiErrorResponse {
     pub message: String,
     pub description: String,
     pub error: String,
@@ -120,7 +112,7 @@ pub struct ResponseError {
 
 #[cfg(test)]
 mod tests {
-    use crate::transport::{
+    use crate::model::{
         CommentIdsField, EmbeddedField, ExifField, FieldPath, ItemField, PhotoSizeField,
         ResourceField, ShareField, build_fields,
     };

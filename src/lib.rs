@@ -1,13 +1,16 @@
+mod api;
+mod checksum;
 mod client;
+mod download;
 mod error;
-#[macro_use]
 mod macros;
+mod model;
 mod path_safety;
-mod transport;
 mod utils;
-mod verify;
+mod walker;
 
-pub use client::{Outcome, YaShareClient};
+pub const CHUNK_SIZE: usize = 1024 * 1024;
+
+pub use client::YaShareClient;
 pub use error::{Error, Result, io_error};
-pub use transport::{ChecksumSpec, Item, Link, Resource};
-pub use verify::Verifier;
+pub use utils::PublicKey;

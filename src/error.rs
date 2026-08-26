@@ -5,6 +5,12 @@ use reqwest::StatusCode;
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    #[error("range not satisfiable for {path}, restarting from scratch")]
+    RangeNotSatisfiable { path: PathBuf },
+
+    #[error("invalid max link attempts: {0}")]
+    InvalidMaxLinkAttempts(usize),
+
     #[error("{error}: {message} {description}")]
     Api {
         status: StatusCode,
@@ -67,6 +73,9 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("I/O error: {0}")]
+    TokioIo(#[source] io::Error),
+
     #[error("invalid path component: {0}")]
     InvalidPath(String),
 
@@ -90,6 +99,9 @@ pub enum Error {
 
     #[error("failed to parse URL: {0}")]
     UrlParse(#[from] url::ParseError),
+
+    #[error("invalid public key: {0}")]
+    InvalidPublicKey(String),
 }
 
 pub fn io_error(path: impl Into<PathBuf>, source: io::Error) -> Error {

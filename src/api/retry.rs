@@ -62,6 +62,7 @@ impl RetryPolicy {
                 Error::SizeMismatch { .. } | Error::ChecksumMismatch { .. } => {
                     RetryDecision::RetryAfter(backoff)
                 }
+                Error::RangeNotSatisfiable { .. } => RetryDecision::RetryAfter(backoff),
                 _ => RetryDecision::Abort,
             }
         })

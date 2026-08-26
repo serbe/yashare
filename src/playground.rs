@@ -1,6 +1,6 @@
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
-use yashare::{Error, YaShareClient};
+use yashare::{Error, PublicKey, YaShareClient};
 
 const KEY: &str = "https://disk.yandex.ru/d/965DOIGYMrcE-w";
 
@@ -23,9 +23,15 @@ async fn main() -> Result<(), Error> {
         token_for_signals.cancel(); // Сигналим всем задачам о завершении
     });
 
-    let client = YaShareClient::default()?;
+    let client = YaShareClient::default();
 
-    let meta = client.resource_meta(KEY, None, &cancellation_token).await?;
+    let public_key = PublicKey::parse(KEY)?;
+
+    debug!("public_key: {}", public_key.as_api_string());
+
+    let meta = client
+        .resource_meta(&public_key, None, &cancellation_token)
+        .await?;
 
     let name = meta.name.clone().unwrap();
 

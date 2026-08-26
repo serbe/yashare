@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use crate::error::{Error, Result};
 
+const INVALID_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
 /// Converts a Yandex.Disk path (e.g. `/Photos/2024/img.jpg`) into a safe,
 /// relative filesystem path with no `..`, empty, or reserved components.
 pub fn safe_relative_path(disk_path: &str) -> Result<PathBuf> {
@@ -32,13 +34,16 @@ pub fn safe_relative_path(disk_path: &str) -> Result<PathBuf> {
 pub fn safe_filename_component(name: &str) -> String {
     let mut result = name.trim().to_string();
 
-    if result.is_empty() {
-        return "_".to_string();
-    }
-
-    for ch in ['<', '>', ':', '"', '/', '\\', '|', '?', '*'] {
-        result = result.replace(ch, "_");
-    }
+    result = result
+        .chars()
+        .map(|c| {
+            if c.is_control() || INVALID_CHARS.contains(&c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
 
     while result.ends_with(' ') || result.ends_with('.') {
         result.pop();
@@ -51,7 +56,8 @@ pub fn safe_filename_component(name: &str) -> String {
     let upper = result.to_uppercase();
     let reserved = matches!(
         upper.as_str(),
-        "CON" | "PRN"
+        "CON"
+            | "PRN"
             | "AUX"
             | "NUL"
             | "COM1"

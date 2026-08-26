@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use futures_util::{Stream, stream::try_unfold};
 use tokio_util::sync::CancellationToken;
 
-use crate::{Error, client::ApiClient, transport::Item};
+use crate::{Error, api::api::ApiClient, model::Item, utils::PublicKey};
 
 const DEFAULT_PAGE_SIZE: usize = 1000;
 
@@ -16,7 +16,7 @@ struct DirectoryState {
 
 pub(crate) struct Walker {
     api: ApiClient,
-    public_key: String,
+    public_key: PublicKey,
     shutdown: CancellationToken,
 
     pending: Vec<DirectoryState>,
@@ -30,13 +30,13 @@ pub(crate) struct Walker {
 impl Walker {
     pub(crate) fn new(
         api: ApiClient,
-        public_key: String,
+        public_key: &PublicKey,
         root_path: impl Into<String>,
         shutdown: CancellationToken,
     ) -> Self {
         Self {
             api,
-            public_key,
+            public_key: public_key.clone(),
             shutdown,
 
             pending: vec![DirectoryState {
