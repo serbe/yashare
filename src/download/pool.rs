@@ -11,16 +11,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     Error,
-    api::{api::ApiClient, http_client::HttpClient, retry::RetryPolicy},
-    checksum::VerifyMode,
     download::{
+        DownloadContext,
         job::DownloadJob,
         stats::{DownloadFailure, DownloadStats},
         worker::DownloadWorker,
     },
 };
 
-/// Пул `DownloadWorker`, получающих задачи через общий `async_channel`.
 pub(crate) struct DownloadPool {
     sender: async_channel::Sender<DownloadJob>,
     handles: Vec<JoinHandle<()>>,
@@ -30,11 +28,7 @@ pub(crate) struct DownloadPool {
 impl DownloadPool {
     pub(crate) fn spawn(
         worker_count: usize,
-        http: HttpClient,
-        api: ApiClient,
-        retry: RetryPolicy,
-        max_link_attempts: usize,
-        verify_mode: VerifyMode,
+        ctx: DownloadContext,
         stats: Arc<DownloadStats>,
         shutdown: CancellationToken,
     ) -> Self {
@@ -44,15 +38,7 @@ impl DownloadPool {
 
         let handles = (0..worker_count.max(1))
             .map(|id| {
-                let worker = DownloadWorker::new(
-                    id,
-                    http.clone(),
-                    api.clone(),
-                    retry.clone(),
-                    max_link_attempts,
-                    created_dirs.clone(),
-                    verify_mode,
-                );
+                let worker = DownloadWorker::new(id, ctx.clone(), created_dirs.clone());
 
                 tokio::spawn(worker.run(
                     receiver.clone(),
@@ -74,7 +60,6 @@ impl DownloadPool {
         self.sender.send(job).await.map_err(|_| Error::Cancelled)
     }
 
-    /// Закрывает канал (новых задач не будет) и дожидается, пока воркеры его вычерпают.
     pub(crate) async fn join(self) -> Vec<DownloadFailure> {
         drop(self.sender);
 

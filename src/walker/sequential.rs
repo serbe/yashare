@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use futures_util::{Stream, stream::try_unfold};
 use tokio_util::sync::CancellationToken;
 
-use crate::{Error, api::api::ApiClient, model::Item, utils::PublicKey};
+use crate::{Error, api::resource_client::ResourceClient, model::Item, public_key::PublicKey};
 
 const DEFAULT_PAGE_SIZE: usize = 1000;
 
@@ -15,7 +15,7 @@ struct DirectoryState {
 }
 
 pub(crate) struct Walker {
-    api: ApiClient,
+    api: ResourceClient,
     public_key: PublicKey,
     shutdown: CancellationToken,
 
@@ -29,7 +29,7 @@ pub(crate) struct Walker {
 
 impl Walker {
     pub(crate) fn new(
-        api: ApiClient,
+        api: ResourceClient,
         public_key: &PublicKey,
         root_path: impl Into<String>,
         shutdown: CancellationToken,
@@ -62,18 +62,11 @@ impl Walker {
                 return Err(Error::Cancelled);
             }
 
-            /*
-             * Сначала отдаём уже загруженные элементы.
-             */
             if let Some(item) = self.buffer.pop_front() {
                 self.handle_item(&item);
                 return Ok(Some(item));
             }
 
-            /*
-             * Если текущий каталог закончился,
-             * переходим к следующему.
-             */
             if let Some(current) = &self.current
                 && let Some(total) = current.total
                 && current.offset >= total
@@ -82,10 +75,6 @@ impl Walker {
                 continue;
             }
 
-            /*
-             * Если текущего каталога нет,
-             * берём следующий из DFS-стека.
-             */
             if self.current.is_none() {
                 self.current = self.pending.pop();
             }
@@ -94,9 +83,6 @@ impl Walker {
                 return Ok(None);
             };
 
-            /*
-             * Запрашиваем следующую страницу.
-             */
             let page = self
                 .api
                 .list_page(
@@ -113,19 +99,12 @@ impl Walker {
                 continue;
             };
 
-            /*
-             * Сохраняем total только если API его вернул.
-             */
             if let Some(total) = embedded.total {
                 current.total = Some(total as usize);
             }
 
             let items = embedded.items.unwrap_or_default();
 
-            /*
-             * Пустая страница означает конец каталога,
-             * даже если total отсутствует.
-             */
             if items.is_empty() {
                 self.current = None;
                 continue;
@@ -138,7 +117,7 @@ impl Walker {
     }
 
     fn handle_item(&mut self, item: &Item) {
-        if item.item_type.as_deref() != Some("dir") {
+        if !item.is_dir() {
             return;
         }
 

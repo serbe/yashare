@@ -29,9 +29,12 @@ macro_rules! field_enum {
 
         impl $name {
             pub fn all() -> Vec<Self> {
-                let mut result: Vec<Self> = vec![$( Self::$lvariant ),*];
+                let result: Vec<Self> = vec![$( Self::$lvariant ),*];
                 $(
-                    result.extend(<$ntype>::all().into_iter().map(Self::$nvariant));
+                    let result: Vec<Self> = result
+                        .into_iter()
+                        .chain(<$ntype>::all().into_iter().map(Self::$nvariant))
+                        .collect();
                 )*
                 result
             }

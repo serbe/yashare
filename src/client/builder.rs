@@ -3,14 +3,14 @@ use std::time::Duration;
 use reqwest::{Client, ClientBuilder};
 use url::Url;
 
-use crate::{Error, YaShareClient, api::retry::RetryPolicy, checksum::VerifyMode};
+use crate::{Error, YaShareClient, api::retry::RetryPolicy, checksum::VerificationMode};
 
 const DEFAULT_API_BASE: &str = "https://cloud-api.yandex.net/v1/disk";
 const DEFAULT_USER_AGENT: &str = concat!("yashare/", env!("CARGO_PKG_VERSION"));
 const DEFAULT_MAX_RETRIES: usize = 8;
 const DEFAULT_MAX_LINK_ATTEMPTS: usize = 3;
 const DEFAULT_MAX_CONCURRENT_DOWNLOADS: usize = 6;
-const DEFAULT_MAX_LISTERS: usize = 6;
+const DEFAULT_MAX_LISTING_WORKERS: usize = 6;
 
 #[derive(Clone)]
 pub struct ClientConfig {
@@ -18,8 +18,8 @@ pub struct ClientConfig {
     pub retry_policy: RetryPolicy,
     pub max_link_attempts: usize,
     pub max_concurrent_downloads: usize,
-    pub max_concurrent_listers: usize,
-    pub verify_mode: VerifyMode,
+    pub max_listing_workers: usize,
+    pub verify_mode: VerificationMode,
 }
 
 impl Default for ClientConfig {
@@ -29,8 +29,8 @@ impl Default for ClientConfig {
             retry_policy: RetryPolicy::default_conditions(DEFAULT_MAX_RETRIES),
             max_link_attempts: DEFAULT_MAX_LINK_ATTEMPTS,
             max_concurrent_downloads: DEFAULT_MAX_CONCURRENT_DOWNLOADS,
-            max_concurrent_listers: DEFAULT_MAX_LISTERS,
-            verify_mode: VerifyMode::default(),
+            max_listing_workers: DEFAULT_MAX_LISTING_WORKERS,
+            verify_mode: VerificationMode::default(),
         }
     }
 }
@@ -40,14 +40,16 @@ pub struct YaShareClientBuilder {
     http_builder: ClientBuilder,
 }
 
-impl YaShareClientBuilder {
-    pub fn default() -> Self {
+impl Default for YaShareClientBuilder {
+    fn default() -> Self {
         Self {
             config: ClientConfig::default(),
             http_builder: Client::builder().user_agent(DEFAULT_USER_AGENT),
         }
     }
+}
 
+impl YaShareClientBuilder {
     pub fn new() -> Self {
         Self::default()
     }
@@ -62,12 +64,12 @@ impl YaShareClientBuilder {
         self
     }
 
-    pub fn max_concurrent_listers(mut self, max_listers: usize) -> Self {
-        self.config.max_concurrent_listers = max_listers.max(1);
+    pub fn max_listing_workers(mut self, max_listing_workers: usize) -> Self {
+        self.config.max_listing_workers = max_listing_workers.max(1);
         self
     }
 
-    pub fn verify_mode(mut self, verify_mode: VerifyMode) -> Self {
+    pub fn verify_mode(mut self, verify_mode: VerificationMode) -> Self {
         self.config.verify_mode = verify_mode;
         self
     }

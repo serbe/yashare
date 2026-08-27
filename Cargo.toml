@@ -10,7 +10,7 @@ categories = ["network-programming"]
 
 [[bin]]
 name = "playground"
-path = "src/playground.rs"
+path = "examples/playground.rs"
 
 [dependencies]
 async-channel = "2.5.0"

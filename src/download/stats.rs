@@ -43,6 +43,18 @@ impl DownloadStats {
         self.failed.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn bytes_downloaded(&self) -> u64 {
+        self.bytes_downloaded.load(Ordering::Relaxed)
+    }
+
+    pub fn bytes_resumed(&self) -> u64 {
+        self.bytes_resumed.load(Ordering::Relaxed)
+    }
+
+    pub fn bytes_skipped(&self) -> u64 {
+        self.bytes_skipped.load(Ordering::Relaxed)
+    }
+
     #[inline]
     pub fn record(&self, outcome: Outcome, size: u64) {
         self.total.fetch_add(1, Ordering::Relaxed);
@@ -64,16 +76,12 @@ impl DownloadStats {
     }
 }
 
-/// Одна неудачная попытка — либо элемент отбракован ещё до постановки в очередь
-/// (например, небезопасный путь), либо сама закачка завершилась ошибкой после ретраев.
 #[derive(Debug)]
 pub struct DownloadFailure {
     pub path: String,
     pub error: Error,
 }
 
-/// Итог `download_all`: агрегированные счётчики плюс список конкретных ошибок,
-/// чтобы они не терялись за атомарными счётчиками `DownloadStats`.
 #[derive(Debug)]
 pub struct DownloadResult {
     pub stats: Arc<DownloadStats>,

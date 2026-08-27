@@ -1,10 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::{Error, checksum::ChecksumSpec, model::Item, utils::PublicKey};
+use crate::{
+    Error, checksum::ChecksumSpec, download::path_safety::safe_relative_path, model::Item,
+    public_key::PublicKey,
+};
 
-/// Единица работы для `DownloadWorker`: всё необходимое, чтобы получить
-/// (возможно, протухшую) ссылку на скачивание, докачать файл с резюме
-/// и проверить его целостность.
 #[derive(Debug, Clone)]
 pub struct DownloadJob {
     pub public_key: PublicKey,
@@ -16,6 +16,19 @@ pub struct DownloadJob {
 }
 
 impl DownloadJob {
+    pub(crate) fn for_download(
+        dest_dir: &Path,
+        public_key: &PublicKey,
+        item: &Item,
+    ) -> Result<Self, Error> {
+        let item_path = item
+            .path
+            .as_deref()
+            .ok_or_else(|| Error::InvalidPath("item has no path".to_string()))?;
+        let destination = dest_dir.join(safe_relative_path(item_path)?);
+        Self::from_item(public_key, item, destination)
+    }
+
     pub fn from_item(
         public_key: &PublicKey,
         item: &Item,

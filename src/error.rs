@@ -29,9 +29,6 @@ pub enum Error {
     #[error("create client failed")]
     CreateClient,
 
-    #[error("Url not resolved")]
-    UrlNotResolved,
-
     #[error("connection failed")]
     Connect(#[source] reqwest::Error),
 
@@ -73,9 +70,6 @@ pub enum Error {
         source: io::Error,
     },
 
-    #[error("I/O error: {0}")]
-    TokioIo(#[source] io::Error),
-
     #[error("invalid path component: {0}")]
     InvalidPath(String),
 
@@ -84,9 +78,6 @@ pub enum Error {
 
     #[error("invalid HTTP header value: {0}")]
     InvalidHeader(String),
-
-    #[error("api request failed after retries: {0}")]
-    RetriesExhausted(String),
 
     #[error("unexpected api response: {0}")]
     UnexpectedResponse(String),
@@ -102,6 +93,24 @@ pub enum Error {
 
     #[error("invalid public key: {0}")]
     InvalidPublicKey(String),
+}
+
+impl Error {
+    pub(crate) fn is_expired_link(&self) -> bool {
+        matches!(
+            self,
+            Error::Status { status, .. } | Error::Api { status, .. }
+                if matches!(status, &StatusCode::FORBIDDEN | &StatusCode::GONE)
+        )
+    }
+
+    pub(crate) fn is_range_not_satisfiable(&self) -> bool {
+        matches!(
+            self,
+            Error::Status { status, .. } | Error::Api { status, .. }
+                if *status == StatusCode::RANGE_NOT_SATISFIABLE
+        )
+    }
 }
 
 pub fn io_error(path: impl Into<PathBuf>, source: io::Error) -> Error {

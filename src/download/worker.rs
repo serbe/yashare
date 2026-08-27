@@ -3,32 +3,28 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bytes::BytesMut;
 use dashmap::DashSet;
 use futures_util::StreamExt;
-use md5::{Digest, Md5};
 use reqwest::{
     StatusCode,
     header::{CONTENT_RANGE, HeaderMap, HeaderValue, RANGE},
 };
-use sha2::Sha256;
 use tokio::{
-    fs::{File, OpenOptions, create_dir_all, metadata, remove_file, rename},
-    io::{AsyncReadExt, AsyncWriteExt},
+    fs::{OpenOptions, create_dir_all, metadata, remove_file, rename},
+    io::AsyncWriteExt,
 };
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     CHUNK_SIZE, Error,
-    api::{
-        api::ApiClient,
-        http_client::HttpClient,
-        retry::{RetryDecision, RetryPolicy},
-    },
-    checksum::{ChecksumSpec, VerifyMode},
+    api::retry::RetryDecision,
+    checksum::{ChecksumSpec, VerificationMode},
     download::{
+        DownloadContext,
         job::DownloadJob,
+        resume::{content_range_starts_at, to_part_path},
         stats::{DownloadFailure, DownloadStats},
+        verification::Verifier,
     },
     io_error,
     utils::sleep_or_cancel,
@@ -41,46 +37,31 @@ pub enum Outcome {
     Downloaded,
 }
 
-/// Долгоживущий воркер. Пул таких воркеров вычитывает `DownloadJob` из
-/// общего `async_channel` и обрабатывает их по одному: обновляет
-/// протухшие ссылки, докачивает `.part`-файлы, проверяет чексуммы.
 pub(crate) struct DownloadWorker {
     id: usize,
-    http: HttpClient,
-    api: ApiClient,
-    retry: RetryPolicy,
-    max_link_attempts: usize,
+    ctx: DownloadContext,
     created_dirs: Arc<DashSet<PathBuf>>,
-    buffer: BytesMut,
-    verify_mode: VerifyMode,
+    verifier: Verifier,
 }
 
 impl DownloadWorker {
     pub(crate) fn new(
         id: usize,
-        http: HttpClient,
-        api: ApiClient,
-        retry: RetryPolicy,
-        max_link_attempts: usize,
+        ctx: DownloadContext,
         created_dirs: Arc<DashSet<PathBuf>>,
-        verify_mode: VerifyMode,
     ) -> Self {
-        let mut buffer = BytesMut::with_capacity(CHUNK_SIZE);
-        buffer.resize(CHUNK_SIZE, 0);
-
         Self {
             id,
-            http,
-            api,
-            retry,
-            max_link_attempts,
+            ctx,
             created_dirs,
-            buffer,
-            verify_mode,
+            verifier: Verifier::new(CHUNK_SIZE),
         }
     }
 
-    /// Забирает задачи из `receiver`, пока канал не закроется или не сработает `shutdown`.
+    pub(crate) fn single(ctx: DownloadContext) -> Self {
+        Self::new(0, ctx, Arc::new(DashSet::new()))
+    }
+
     pub(crate) async fn run(
         mut self,
         receiver: async_channel::Receiver<DownloadJob>,
@@ -97,13 +78,13 @@ impl DownloadWorker {
             };
 
             let Ok(job) = job else {
-                break; // канал закрыт продюсером — работы больше нет
+                break;
             };
 
             let size = job.size;
             let path = job.item_path.clone();
 
-            match self.process(job, &shutdown).await {
+            match self.download_job(job, &shutdown).await {
                 Ok(outcome) => stats.record(outcome, size),
 
                 Err(Error::Cancelled) => {
@@ -127,20 +108,19 @@ impl DownloadWorker {
         }
     }
 
-    /// Получает (при необходимости — обновлённую) ссылку и качает файл целиком.
-    pub(crate) async fn process(
+    pub(crate) async fn download_job(
         &mut self,
         job: DownloadJob,
         shutdown: &CancellationToken,
     ) -> Result<Outcome, Error> {
         let mut last_error = None;
 
-        for refresh in 1..=self.max_link_attempts {
+        for link_attempt in 1..=self.ctx.max_link_attempts {
             if shutdown.is_cancelled() {
                 return Err(Error::Cancelled);
             }
 
-            let href = if refresh == 1 {
+            let href = if link_attempt == 1 {
                 job.initial_href.clone()
             } else {
                 None
@@ -149,8 +129,9 @@ impl DownloadWorker {
             let link = match href {
                 Some(href) => href,
                 None => {
-                    self.api
-                        .download_href(&job.public_key, Some(&job.item_path), shutdown)
+                    self.ctx
+                        .api
+                        .get_download_link(&job.public_key, Some(&job.item_path), shutdown)
                         .await?
                         .href
                 }
@@ -161,11 +142,11 @@ impl DownloadWorker {
                 .await
             {
                 Ok(outcome) => return Ok(outcome),
-                Err(err) if is_expired_link_error(&err) => {
+                Err(err) if err.is_expired_link() => {
                     tracing::warn!(
                         worker = self.id,
                         path = %job.item_path,
-                        attempt = refresh,
+                        attempt = link_attempt,
                         "download link expired, requesting a fresh one",
                     );
                     last_error = Some(err);
@@ -198,23 +179,24 @@ impl DownloadWorker {
         }
 
         if self
-            .file_matches(destination, expected_size, checksum)
+            .verifier
+            .file_matches(destination, expected_size, checksum, self.ctx.verify_mode)
             .await
             .map_err(|e| io_error(destination, e))?
         {
             return Ok(Outcome::AlreadyComplete);
         }
 
-        let part_path = part_path_for(destination);
+        let part_path = to_part_path(destination);
         let mut last_error: Option<Error> = None;
 
-        for attempt in 1..=self.retry.max_attempts {
+        for attempt in 1..=self.ctx.retry.max_attempts {
             if shutdown.is_cancelled() {
                 return Err(Error::Cancelled);
             }
 
             match self
-                .attempt(
+                .try_download_once(
                     url,
                     &part_path,
                     destination,
@@ -226,13 +208,13 @@ impl DownloadWorker {
             {
                 Ok(outcome) => return Ok(outcome),
                 Err(Error::Cancelled) => return Err(Error::Cancelled),
-                Err(err @ Error::Io { .. }) => return Err(err), // не ретраим
-                Err(err) => match self.retry.decide(&err, attempt) {
+                Err(err @ Error::Io { .. }) => return Err(err),
+                Err(err) => match self.ctx.retry.decide(&err, attempt) {
                     RetryDecision::Abort => return Err(err),
                     RetryDecision::RetryAfter(delay) => {
                         last_error = Some(err);
 
-                        if attempt >= self.retry.max_attempts {
+                        if attempt >= self.ctx.retry.max_attempts {
                             break;
                         }
                         if sleep_or_cancel(delay, shutdown).await {
@@ -246,7 +228,7 @@ impl DownloadWorker {
         Err(last_error.unwrap_or(Error::Cancelled))
     }
 
-    async fn attempt(
+    async fn try_download_once(
         &mut self,
         url: &str,
         part_path: &Path,
@@ -275,17 +257,13 @@ impl DownloadWorker {
         }
 
         let response = match self
+            .ctx
             .http
-            .send_once(|| self.http.get(url).headers(headers.clone()))
+            .send_checked(|| self.ctx.http.get(url).headers(headers.clone()))
             .await
         {
             Ok(response) => response,
-
-            // Сервер не может докачать с этим Range: .part битый, устаревший
-            // или сервер вообще не поддерживает докачку по этому href.
-            // Повторный запрос с тем же Range снова получит 416, поэтому
-            // сбрасываем .part и просим внешний ретрай начать с нуля.
-            Err(err) if existing_size > 0 && is_range_not_satisfiable(&err) => {
+            Err(err) if existing_size > 0 && err.is_range_not_satisfiable() => {
                 tracing::warn!(
                     worker = self.id,
                     path = %part_path.display(),
@@ -300,7 +278,6 @@ impl DownloadWorker {
                     path: part_path.to_path_buf(),
                 });
             }
-
             Err(err) => return Err(err),
         };
 
@@ -373,8 +350,9 @@ impl DownloadWorker {
             });
         }
 
-        if self.verify_mode == VerifyMode::Checksum
+        if self.ctx.verify_mode == VerificationMode::Checksum
             && !self
+                .verifier
                 .verify(part_path, checksum)
                 .await
                 .map_err(|e| io_error(part_path, e))?
@@ -399,9 +377,6 @@ impl DownloadWorker {
     }
 
     async fn ensure_dir(&self, parent: &Path) -> Result<(), Error> {
-        if self.created_dirs.contains(parent) {
-            return Ok(());
-        }
         if self.created_dirs.insert(parent.to_path_buf()) {
             create_dir_all(parent)
                 .await
@@ -409,116 +384,4 @@ impl DownloadWorker {
         }
         Ok(())
     }
-
-    async fn file_matches(
-        &mut self,
-        path: &Path,
-        expected_size: u64,
-        checksum: &ChecksumSpec,
-    ) -> std::io::Result<bool> {
-        let metadata = match metadata(path).await {
-            Ok(m) => m,
-            Err(_) => return Ok(false),
-        };
-        if metadata.len() != expected_size {
-            return Ok(false);
-        }
-
-        match self.verify_mode {
-            VerifyMode::SizeOnly => Ok(true),
-            VerifyMode::Checksum => self.verify(path, checksum).await,
-        }
-    }
-
-    async fn hash_file<D: Digest + Default>(&mut self, path: &Path) -> std::io::Result<String> {
-        let mut file = File::open(path).await?;
-        let mut hasher = D::default();
-
-        loop {
-            let n = file.read(&mut self.buffer[..]).await?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&self.buffer[..n]);
-        }
-
-        Ok(hex::encode(hasher.finalize()))
-    }
-
-    async fn hash_file_both(&mut self, path: &Path) -> std::io::Result<(String, String)> {
-        let mut file = File::open(path).await?;
-        let mut md5 = Md5::default();
-        let mut sha256 = Sha256::default();
-
-        loop {
-            let n = file.read(&mut self.buffer[..]).await?;
-            if n == 0 {
-                break;
-            }
-            let chunk = &self.buffer[..n];
-            md5.update(chunk);
-            sha256.update(chunk);
-        }
-
-        Ok((hex::encode(md5.finalize()), hex::encode(sha256.finalize())))
-    }
-
-    async fn verify(&mut self, path: &Path, checksum: &ChecksumSpec) -> std::io::Result<bool> {
-        match checksum {
-            ChecksumSpec::Md5(expected) => {
-                let actual = self.hash_file::<Md5>(path).await?;
-                Ok(actual.eq_ignore_ascii_case(expected))
-            }
-            ChecksumSpec::Sha256(expected) => {
-                let actual = self.hash_file::<Sha256>(path).await?;
-                Ok(actual.eq_ignore_ascii_case(expected))
-            }
-            ChecksumSpec::Both { md5, sha256 } => {
-                let (actual_md5, actual_sha256) = self.hash_file_both(path).await?;
-                Ok(actual_md5.eq_ignore_ascii_case(md5)
-                    && actual_sha256.eq_ignore_ascii_case(sha256))
-            }
-            ChecksumSpec::None => Ok(true),
-        }
-    }
-}
-
-fn is_range_not_satisfiable(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::Status { status, .. } | Error::Api { status, .. }
-            if *status == StatusCode::RANGE_NOT_SATISFIABLE
-    )
-}
-
-fn is_expired_link_error(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::Status { status, .. } | Error::Api { status, .. }
-            if matches!(status, &StatusCode::FORBIDDEN | &StatusCode::GONE)
-    )
-}
-
-fn part_path_for(destination: &Path) -> PathBuf {
-    let mut path = destination.as_os_str().to_os_string();
-    path.push(".part");
-    PathBuf::from(path)
-}
-
-fn content_range_starts_at(header_value: &str, expected_start: u64, expected_total: u64) -> bool {
-    let Some(rest) = header_value.strip_prefix("bytes ") else {
-        return false;
-    };
-    let mut parts = rest.split('/');
-    let (Some(range), Some(total)) = (parts.next(), parts.next()) else {
-        return false;
-    };
-    let mut range_parts = range.split('-');
-    let Some(start) = range_parts.next().and_then(|s| s.parse::<u64>().ok()) else {
-        return false;
-    };
-    let Some(total) = total.parse::<u64>().ok() else {
-        return false;
-    };
-    start == expected_start && total == expected_total
 }

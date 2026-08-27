@@ -18,10 +18,8 @@ impl ChecksumSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum VerifyMode {
-    /// Сравнивать только размер файла (быстро, но не защищает от битых данных).
+pub enum VerificationMode {
     #[default]
     SizeOnly,
-    /// Дополнительно проверять md5/sha256, если они известны для элемента.
     Checksum,
 }

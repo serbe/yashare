@@ -1,7 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
 use rand::{RngExt, rng};
-use reqwest::StatusCode;
 
 use crate::Error;
 
@@ -35,27 +34,18 @@ impl RetryPolicy {
             let backoff =
                 exponential_backoff(attempt, Duration::from_secs(2), Duration::from_secs(60));
 
-            fn is_expired_link_status(status: StatusCode) -> bool {
-                matches!(status, StatusCode::FORBIDDEN | StatusCode::GONE)
-            }
-
             match error {
                 Error::Connect(_) | Error::StreamInterrupted(_) | Error::BodyInterrupted(_) => {
                     RetryDecision::RetryAfter(backoff)
                 }
-                Error::Status {
-                    status,
-                    retry_after,
-                } if is_expired_link_status(*status) => {
+                Error::Status { retry_after, .. } if error.is_expired_link() => {
                     let _ = retry_after;
                     RetryDecision::Abort
                 }
                 Error::Status { retry_after, .. } => {
                     RetryDecision::RetryAfter(retry_after.unwrap_or(backoff))
                 }
-                Error::Api { status, .. } if is_expired_link_status(*status) => {
-                    RetryDecision::Abort
-                }
+                Error::Api { .. } if error.is_expired_link() => RetryDecision::Abort,
                 Error::LinkExpired { .. } | Error::InvalidContentRange { .. } => {
                     RetryDecision::RetryAfter(backoff)
                 }
