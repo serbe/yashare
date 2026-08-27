@@ -24,7 +24,7 @@ use crate::{
         job::DownloadJob,
         resume::{content_range_starts_at, to_part_path},
         stats::{DownloadFailure, DownloadStats},
-        verification::Verifier,
+        verification::FileVerifier,
     },
     io_error,
     utils::sleep_or_cancel,
@@ -41,7 +41,7 @@ pub(crate) struct DownloadWorker {
     id: usize,
     ctx: DownloadContext,
     created_dirs: Arc<DashSet<PathBuf>>,
-    verifier: Verifier,
+    verifier: FileVerifier,
 }
 
 impl DownloadWorker {
@@ -54,7 +54,7 @@ impl DownloadWorker {
             id,
             ctx,
             created_dirs,
-            verifier: Verifier::new(CHUNK_SIZE),
+            verifier: FileVerifier::new(CHUNK_SIZE),
         }
     }
 
