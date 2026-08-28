@@ -1,12 +1,12 @@
-use async_channel::{bounded, unbounded};
-use futures_util::Stream;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
-use tokio_util::sync::CancellationToken;
 
-use crate::{Error, api::resource_client::ResourceClient, model::Item, public_key::PublicKey};
+use async_channel::{bounded, unbounded};
+use futures_util::Stream;
+
+use crate::{Error, api::ResourceClient, cancel::Cancel, model::Item, public_key::PublicKey};
 
 struct PageTask {
     path: String,
@@ -16,7 +16,7 @@ struct PageTask {
 pub(crate) struct ParallelWalker {
     api: ResourceClient,
     public_key: PublicKey,
-    shutdown: CancellationToken,
+    cancel: Cancel,
     max_listing_workers: usize,
     page_size: usize,
     item_buffer: usize,
@@ -27,12 +27,12 @@ impl ParallelWalker {
         api: ResourceClient,
         public_key: &PublicKey,
         max_listing_workers: usize,
-        shutdown: CancellationToken,
+        cancel: Cancel,
     ) -> Self {
         Self {
             api,
             public_key: public_key.clone(),
-            shutdown,
+            cancel,
             max_listing_workers,
             page_size: 1000,
             item_buffer: 2000,
@@ -48,15 +48,12 @@ impl ParallelWalker {
         let (item_tx, item_rx) = bounded::<Result<Item, Error>>(self.item_buffer);
         let (task_tx, task_rx) = unbounded::<PageTask>();
         let pending = Arc::new(AtomicUsize::new(1));
-        let _ = task_tx.try_send(PageTask {
-            path: root_path,
-            offset: 0,
-        });
+        let _ = task_tx.try_send(PageTask { path: root_path, offset: 0 });
 
         for _ in 0..self.max_listing_workers {
             let api = self.api.clone();
             let pk = self.public_key.clone();
-            let shutdown = self.shutdown.clone();
+            let cancel = self.cancel.clone();
             let task_tx = task_tx.clone();
             let task_rx = task_rx.clone();
             let item_tx = item_tx.clone();
@@ -65,38 +62,33 @@ impl ParallelWalker {
 
             tokio::spawn(async move {
                 while let Ok(task) = task_rx.recv().await {
-                    if shutdown.is_cancelled() {
+                    if cancel.check().is_err() {
                         finish(&pending, &task_tx, &item_tx);
                         break;
                     }
 
-                    match api
-                        .list_page(&pk, &task.path, page_size, task.offset, &shutdown)
-                        .await
-                    {
+                    match api.list_page(&pk, &task.path, page_size, task.offset, &cancel).await {
                         Ok(page) => {
                             let Some(embedded) = page.embedded else {
                                 finish(&pending, &task_tx, &item_tx);
                                 continue;
                             };
 
-                            if task.offset == 0
-                                && let Some(total) = embedded.total
-                            {
-                                let mut offset = page_size;
-                                while offset < total as usize {
-                                    pending.fetch_add(1, Ordering::SeqCst);
-                                    if task_tx
-                                        .send(PageTask {
-                                            path: task.path.clone(),
-                                            offset,
-                                        })
-                                        .await
-                                        .is_err()
-                                    {
-                                        break;
+                            if task.offset == 0 {
+                                if let Some(total) = embedded.total {
+                                    let mut offset = page_size;
+                                    while offset < total as usize {
+                                        pending.fetch_add(1, Ordering::SeqCst);
+                                        if task_tx
+                                            .send(PageTask { path: task.path.clone(), offset })
+                                            .await
+                                            .is_err()
+                                        {
+                                            pending.fetch_sub(1, Ordering::SeqCst);
+                                            break;
+                                        }
+                                        offset += page_size;
                                     }
-                                    offset += page_size;
                                 }
                             }
 
@@ -106,32 +98,32 @@ impl ParallelWalker {
                             let unknown_total_continue =
                                 embedded.total.is_none() && got == page_size;
                             if unknown_total_continue {
-                                pending.fetch_add(1, Ordering::SeqCst);
-                                let _ = task_tx
-                                    .send(PageTask {
+                                dispatch(
+                                    &pending,
+                                    &task_tx,
+                                    PageTask {
                                         path: task.path.clone(),
                                         offset: task.offset + got,
-                                    })
-                                    .await;
+                                    },
+                                )
+                                .await;
                             }
 
                             for item in items {
                                 if item.is_dir()
                                     && let Some(path) = item.path.clone()
                                 {
-                                    pending.fetch_add(1, Ordering::SeqCst);
-                                    if task_tx.send(PageTask { path, offset: 0 }).await.is_err() {
-                                        pending.fetch_sub(1, Ordering::SeqCst);
-                                    }
+                                    dispatch(&pending, &task_tx, PageTask { path, offset: 0 })
+                                        .await;
                                 }
                                 if item_tx.send(Ok(item)).await.is_err() {
                                     break;
                                 }
                             }
-                        }
+                        },
                         Err(err) => {
                             let _ = item_tx.send(Err(err)).await;
-                        }
+                        },
                     }
 
                     finish(&pending, &task_tx, &item_tx);
@@ -154,5 +146,16 @@ fn finish(
     if pending.fetch_sub(1, Ordering::SeqCst) == 1 {
         task_tx.close();
         item_tx.close();
+    }
+}
+
+async fn dispatch(
+    pending: &Arc<AtomicUsize>,
+    task_tx: &async_channel::Sender<PageTask>,
+    task: PageTask,
+) {
+    pending.fetch_add(1, Ordering::SeqCst);
+    if task_tx.send(task).await.is_err() {
+        pending.fetch_sub(1, Ordering::SeqCst);
     }
 }

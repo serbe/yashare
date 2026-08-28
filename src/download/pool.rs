@@ -7,10 +7,10 @@ use std::{
 use async_channel::bounded;
 use dashmap::DashSet;
 use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     Error,
+    cancel::Cancel,
     download::{
         DownloadContext,
         job::DownloadJob,
@@ -30,7 +30,7 @@ impl DownloadPool {
         worker_count: usize,
         ctx: DownloadContext,
         stats: Arc<DownloadStats>,
-        shutdown: CancellationToken,
+        cancel: Cancel,
     ) -> Self {
         let (sender, receiver) = bounded::<DownloadJob>(worker_count.max(1) * 100);
         let created_dirs: Arc<DashSet<PathBuf>> = Arc::new(DashSet::new());
@@ -44,16 +44,12 @@ impl DownloadPool {
                     receiver.clone(),
                     stats.clone(),
                     failures.clone(),
-                    shutdown.clone(),
+                    cancel.clone(),
                 ))
             })
             .collect();
 
-        Self {
-            sender,
-            handles,
-            failures,
-        }
+        Self { sender, handles, failures }
     }
 
     pub(crate) async fn submit(&self, job: DownloadJob) -> Result<(), Error> {

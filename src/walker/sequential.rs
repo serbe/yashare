@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 
 use futures_util::{Stream, stream::try_unfold};
-use tokio_util::sync::CancellationToken;
 
-use crate::{Error, api::resource_client::ResourceClient, model::Item, public_key::PublicKey};
+use crate::{Error, api::ResourceClient, cancel::Cancel, model::Item, public_key::PublicKey};
 
 const DEFAULT_PAGE_SIZE: usize = 1000;
 
@@ -17,7 +16,7 @@ struct DirectoryState {
 pub(crate) struct Walker {
     api: ResourceClient,
     public_key: PublicKey,
-    shutdown: CancellationToken,
+    cancel: Cancel,
 
     pending: Vec<DirectoryState>,
     current: Option<DirectoryState>,
@@ -32,12 +31,12 @@ impl Walker {
         api: ResourceClient,
         public_key: &PublicKey,
         root_path: impl Into<String>,
-        shutdown: CancellationToken,
+        cancel: Cancel,
     ) -> Self {
         Self {
             api,
             public_key: public_key.clone(),
-            shutdown,
+            cancel,
 
             pending: vec![DirectoryState {
                 path: root_path.into(),
@@ -58,9 +57,7 @@ impl Walker {
 
     async fn next_item(&mut self) -> Result<Option<Item>, Error> {
         loop {
-            if self.shutdown.is_cancelled() {
-                return Err(Error::Cancelled);
-            }
+            self.cancel.check()?;
 
             if let Some(item) = self.buffer.pop_front() {
                 self.handle_item(&item);
@@ -90,7 +87,7 @@ impl Walker {
                     &current.path,
                     self.page_size,
                     current.offset,
-                    &self.shutdown,
+                    &self.cancel,
                 )
                 .await?;
 
