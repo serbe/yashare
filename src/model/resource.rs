@@ -3,11 +3,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Item;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResourceType {
+    Dir,
+    File,
+}
+
+impl ResourceType {
+    pub fn is_dir(&self) -> bool {
+        matches!(self, Self::Dir)
+    }
+    pub fn is_file(&self) -> bool {
+        matches!(self, Self::File)
+    }
+}
+
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Resource {
     pub name: Option<String>,
     #[serde(rename = "type")]
-    pub type_field: Option<String>,
+    pub type_field: Option<ResourceType>,
     pub path: Option<String>,
     #[serde(rename = "_embedded")]
     pub embedded: Option<Embedded>,
@@ -35,7 +51,7 @@ pub struct Resource {
 
 impl Resource {
     pub fn is_dir(&self) -> bool {
-        self.type_field.as_deref() == Some("dir")
+        self.type_field == Some(ResourceType::Dir)
     }
 }
 

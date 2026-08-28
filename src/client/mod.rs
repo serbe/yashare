@@ -1,22 +1,18 @@
-pub mod builder;
+mod builder;
 
 use std::{path::Path, sync::Arc};
 
+pub use builder::{ClientConfig, YaShareClientBuilder};
 use futures_util::{Stream, TryStreamExt};
 use reqwest::Client;
-use tokio_util::sync::CancellationToken;
-
-pub use builder::{ClientConfig, YaShareClientBuilder};
 
 use crate::{
     Error,
-    api::{http::HttpClient, resource_client::ResourceClient},
+    api::{HttpClient, ResourceClient},
+    cancel::Cancel,
     download::{
-        DownloadContext,
-        job::DownloadJob,
-        pool::DownloadPool,
-        stats::{DownloadFailure, DownloadResult, DownloadStats},
-        worker::{DownloadWorker, Outcome},
+        DownloadContext, DownloadFailure, DownloadJob, DownloadPool, DownloadResult, DownloadStats,
+        DownloadWorker, Outcome,
     },
     model::{Item, Resource},
     public_key::PublicKey,
@@ -42,11 +38,8 @@ impl YaShareClient {
     pub(crate) fn from_parts(http: Client, config: ClientConfig) -> Result<Self, Error> {
         let http = HttpClient::new(http);
 
-        let api = ResourceClient::new(
-            http.clone(),
-            config.retry_policy.clone(),
-            config.api_base.clone(),
-        );
+        let api =
+            ResourceClient::new(http.clone(), config.retry_policy.clone(), config.api_base.clone());
 
         let ctx = DownloadContext {
             http,
@@ -70,18 +63,12 @@ impl YaShareClient {
     async fn resolve_root_path(
         &self,
         public_key: &PublicKey,
-        shutdown: &CancellationToken,
+        cancel: &Cancel,
     ) -> Result<String, Error> {
-        let root = self
-            .ctx
-            .api
-            .resource_meta(public_key, None, shutdown)
-            .await?;
+        let root = self.ctx.api.resource_meta(public_key, None, cancel).await?;
 
         if !root.is_dir() {
-            return Err(Error::NotAFolder(
-                root.name.unwrap_or_else(|| public_key.as_api_string()),
-            ));
+            return Err(Error::NotAFolder(root.name.unwrap_or_else(|| public_key.as_api_string())));
         }
 
         Ok(root.path.unwrap_or_else(|| "/".to_string()))
@@ -91,25 +78,19 @@ impl YaShareClient {
         &self,
         public_key: &PublicKey,
         path: Option<&str>,
-        shutdown: &CancellationToken,
+        cancel: &Cancel,
     ) -> Result<Resource, Error> {
-        self.ctx.api.resource_meta(public_key, path, shutdown).await
+        self.ctx.api.resource_meta(public_key, path, cancel).await
     }
 
     pub async fn walk(
         &self,
         public_key: &PublicKey,
-        shutdown: &CancellationToken,
+        cancel: &Cancel,
     ) -> Result<impl Stream<Item = Result<Item, Error>>, Error> {
-        let root_path = self.resolve_root_path(public_key, shutdown).await?;
+        let root_path = self.resolve_root_path(public_key, cancel).await?;
 
-        Ok(Walker::new(
-            self.ctx.api.clone(),
-            public_key,
-            root_path,
-            shutdown.clone(),
-        )
-        .into_stream())
+        Ok(Walker::new(self.ctx.api.clone(), public_key, root_path, cancel.clone()).into_stream())
     }
 
     pub async fn download_item(
@@ -117,30 +98,30 @@ impl YaShareClient {
         public_key: &PublicKey,
         item: &Item,
         dest_dir: &Path,
-        shutdown: &CancellationToken,
+        cancel: &Cancel,
     ) -> Result<Outcome, Error> {
         let job = DownloadJob::for_download(dest_dir, public_key, item)?;
 
         let mut worker = DownloadWorker::single(self.ctx.clone());
 
-        worker.download_job(job, shutdown).await
+        worker.download_job(job, cancel).await
     }
 
     pub async fn download_all(
         &self,
         public_key: &PublicKey,
         dest_dir: &Path,
-        shutdown: &CancellationToken,
+        cancel: &Cancel,
     ) -> Result<DownloadResult, Error> {
         let stats = Arc::new(DownloadStats::default());
         let mut failures = Vec::new();
 
-        let root_path = self.resolve_root_path(public_key, shutdown).await?;
+        let root_path = self.resolve_root_path(public_key, cancel).await?;
         let stream = ParallelWalker::new(
             self.ctx.api.clone(),
             public_key,
             self.max_listing_workers,
-            shutdown.clone(),
+            cancel.clone(),
         )
         .into_stream(root_path);
         let mut stream = Box::pin(stream);
@@ -149,11 +130,11 @@ impl YaShareClient {
             self.max_concurrent_downloads,
             self.ctx.clone(),
             stats.clone(),
-            shutdown.clone(),
+            cancel.clone(),
         );
 
         while let Some(item) = stream.try_next().await? {
-            if shutdown.is_cancelled() {
+            if cancel.check().is_err() {
                 break;
             }
 
@@ -168,12 +149,12 @@ impl YaShareClient {
                     if pool.submit(job).await.is_err() {
                         break;
                     }
-                }
+                },
                 Err(err) => {
                     stats.record_failure();
                     tracing::error!(path, error = %err, "skipping item");
                     failures.push(DownloadFailure { path, error: err });
-                }
+                },
             }
         }
 

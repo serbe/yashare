@@ -3,7 +3,10 @@ use std::path::Path;
 use bytes::BytesMut;
 use md5::{Digest, Md5};
 use sha2::Sha256;
-use tokio::{fs::File, io::AsyncReadExt};
+use tokio::{
+    fs::{File, try_exists},
+    io::AsyncReadExt,
+};
 
 use crate::checksum::{ChecksumSpec, VerificationMode};
 
@@ -25,10 +28,11 @@ impl FileVerifier {
         checksum: &ChecksumSpec,
         mode: VerificationMode,
     ) -> std::io::Result<bool> {
-        let metadata = match tokio::fs::metadata(path).await {
-            Ok(m) => m,
-            Err(_) => return Ok(false),
-        };
+        if !try_exists(path).await.unwrap_or(false) {
+            return Ok(false);
+        }
+
+        let metadata = tokio::fs::metadata(path).await?;
 
         if metadata.len() != expected_size {
             return Ok(false);
@@ -49,16 +53,16 @@ impl FileVerifier {
             ChecksumSpec::Md5(expected) => {
                 let actual = self.hash_file::<Md5>(path).await?;
                 Ok(actual.eq_ignore_ascii_case(expected))
-            }
+            },
             ChecksumSpec::Sha256(expected) => {
                 let actual = self.hash_file::<Sha256>(path).await?;
                 Ok(actual.eq_ignore_ascii_case(expected))
-            }
+            },
             ChecksumSpec::Both { md5, sha256 } => {
                 let (actual_md5, actual_sha256) = self.hash_file_both(path).await?;
                 Ok(actual_md5.eq_ignore_ascii_case(md5)
                     && actual_sha256.eq_ignore_ascii_case(sha256))
-            }
+            },
             ChecksumSpec::None => Ok(true),
         }
     }

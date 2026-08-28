@@ -1,14 +1,20 @@
-pub(crate) mod job;
-pub(crate) mod path_safety;
-pub(crate) mod pool;
-pub(crate) mod resume;
-pub(crate) mod stats;
-pub(crate) mod verification;
-pub(crate) mod worker;
+mod job;
+mod path_safety;
+mod pool;
+mod resume;
+mod stats;
+mod verification;
+mod worker;
+
+pub(crate) use job::DownloadJob;
+pub(crate) use pool::DownloadPool;
+pub(crate) use stats::{DownloadFailure, DownloadResult, DownloadStats};
+pub(crate) use worker::{DownloadWorker, Outcome};
 
 use crate::{
-    api::{http::HttpClient, resource_client::ResourceClient, retry::RetryPolicy},
+    api::{HttpClient, ResourceClient},
     checksum::VerificationMode,
+    retry::RetryPolicy,
 };
 
 #[derive(Clone)]

@@ -23,22 +23,20 @@ async fn main() -> Result<(), Error> {
 
     let client = YaShareClient::default();
 
-    let public_key = PublicKey::parse(KEY)?;
+    // let public_key = PublicKey::parse(KEY)?;
 
-    debug!("public_key: {}", public_key.as_api_string());
+    // debug!("public_key: {}", public_key.as_api_string());
 
-    let meta = client
-        .resource_meta(&public_key, None, &cancellation_token)
-        .await?;
+    // let meta = client.resource_meta(&public_key, None, &cancellation_token).await?;
 
-    let name = meta.name.clone().unwrap();
+    // let name = meta.name.clone().unwrap();
 
-    debug!("name: {:?}", name);
+    // debug!("name: {:?}", name);
 
-    let items = meta.embedded.clone().unwrap().items;
+    // let items = meta.embedded.clone().unwrap().items;
 
-    let value = serde_json::to_value(items).unwrap();
-    debug!("{}", to_string_pretty(&value).unwrap());
+    // let value = serde_json::to_value(items).unwrap();
+    // debug!("{}", to_string_pretty(&value).unwrap());
 
     Ok(())
 }

@@ -34,10 +34,7 @@ impl PublicKey {
             .map_err(|_| Error::InvalidPublicKey(format!("invalid URL: {}", url_str)))?;
 
         if url.host_str() != Some("disk.yandex.ru") {
-            return Err(Error::InvalidPublicKey(format!(
-                "not a Yandex.Disk URL: {}",
-                url_str
-            )));
+            return Err(Error::InvalidPublicKey(format!("not a Yandex.Disk URL: {}", url_str)));
         }
 
         if url.path() == "/public/" {
@@ -62,10 +59,7 @@ impl PublicKey {
             return Ok(PublicKey::File(url_str.to_string()));
         }
 
-        Err(Error::InvalidPublicKey(format!(
-            "unsupported URL format: {}",
-            url_str
-        )))
+        Err(Error::InvalidPublicKey(format!("unsupported URL format: {}", url_str)))
     }
 
     pub fn as_api_string(&self) -> String {
@@ -135,10 +129,7 @@ mod tests {
     fn test_parse_folder() {
         let key = PublicKey::parse("https://disk.yandex.ru/d/965DOIGYMrcE-w").unwrap();
         assert!(matches!(key, PublicKey::Folder(_)));
-        assert_eq!(
-            key.as_api_string(),
-            "https://disk.yandex.ru/d/965DOIGYMrcE-w"
-        );
+        assert_eq!(key.as_api_string(), "https://disk.yandex.ru/d/965DOIGYMrcE-w");
     }
 
     #[test]
@@ -158,10 +149,7 @@ mod tests {
     fn test_parse_file() {
         let key = PublicKey::parse("https://disk.yandex.ru/i/6-_IZtW2RA9vuw").unwrap();
         assert!(matches!(key, PublicKey::File(_)));
-        assert_eq!(
-            key.as_api_string(),
-            "https://disk.yandex.ru/i/6-_IZtW2RA9vuw"
-        );
+        assert_eq!(key.as_api_string(), "https://disk.yandex.ru/i/6-_IZtW2RA9vuw");
     }
 
     #[test]

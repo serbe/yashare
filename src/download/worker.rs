@@ -5,30 +5,51 @@ use std::{
 
 use dashmap::DashSet;
 use futures_util::StreamExt;
-use reqwest::{
-    StatusCode,
-    header::{CONTENT_RANGE, HeaderMap, HeaderValue, RANGE},
-};
+use reqwest::header::HeaderMap;
 use tokio::{
-    fs::{OpenOptions, create_dir_all, metadata, remove_file, rename},
+    fs::{create_dir_all, rename},
     io::AsyncWriteExt,
 };
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     CHUNK_SIZE, Error,
-    api::retry::RetryDecision,
+    api::send_checked,
+    cancel::Cancel,
     checksum::{ChecksumSpec, VerificationMode},
     download::{
         DownloadContext,
         job::DownloadJob,
-        resume::{content_range_starts_at, to_part_path},
+        resume::{ResumeAction, ResumeManager, ResumeState},
         stats::{DownloadFailure, DownloadStats},
         verification::FileVerifier,
     },
-    io_error,
-    utils::sleep_or_cancel,
+    io_error, retry,
 };
+
+struct DownloadAttempt<'a> {
+    worker: &'a mut DownloadWorker,
+    url: &'a str,
+    destination: &'a Path,
+    expected_size: u64,
+    checksum: &'a ChecksumSpec,
+    cancel: &'a Cancel,
+}
+
+impl<'a> retry::Attempt for DownloadAttempt<'a> {
+    type Output = Outcome;
+
+    async fn attempt(&mut self, _attempt_no: usize) -> Result<Outcome, Error> {
+        self.worker
+            .try_download_once(
+                self.url,
+                self.destination,
+                self.expected_size,
+                self.checksum,
+                self.cancel,
+            )
+            .await
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
@@ -42,6 +63,7 @@ pub(crate) struct DownloadWorker {
     ctx: DownloadContext,
     created_dirs: Arc<DashSet<PathBuf>>,
     verifier: FileVerifier,
+    resume: ResumeManager,
 }
 
 impl DownloadWorker {
@@ -55,6 +77,7 @@ impl DownloadWorker {
             ctx,
             created_dirs,
             verifier: FileVerifier::new(CHUNK_SIZE),
+            resume: ResumeManager::new(),
         }
     }
 
@@ -62,48 +85,65 @@ impl DownloadWorker {
         Self::new(0, ctx, Arc::new(DashSet::new()))
     }
 
+    async fn finalize_existing_part(
+        &mut self,
+        state: &ResumeState,
+        destination: &Path,
+        checksum: &ChecksumSpec,
+    ) -> Result<(), Error> {
+        if self.ctx.verify_mode == VerificationMode::Checksum
+            && !self
+                .verifier
+                .verify(&state.part_path, checksum)
+                .await
+                .map_err(|e| io_error(&state.part_path, e))?
+        {
+            self.resume.reset(state).await?;
+
+            return Err(Error::ChecksumMismatch { path: state.part_path.clone() });
+        }
+
+        rename(&state.part_path, destination)
+            .await
+            .map_err(|e| io_error(destination, e))?;
+
+        Ok(())
+    }
+
     pub(crate) async fn run(
         mut self,
         receiver: async_channel::Receiver<DownloadJob>,
         stats: Arc<DownloadStats>,
         failures: Arc<Mutex<Vec<DownloadFailure>>>,
-        shutdown: CancellationToken,
+        cancel: Cancel,
     ) {
         loop {
-            let job = tokio::select! {
-                biased;
-
-                _ = shutdown.cancelled() => break,
-                job = receiver.recv() => job,
-            };
-
-            let Ok(job) = job else {
-                break;
+            let job = match cancel.race(receiver.recv()).await {
+                Ok(Ok(job)) => job,
+                Ok(Err(_)) | Err(Error::Cancelled) => break,
+                Err(_) => unreachable!(),
             };
 
             let size = job.size;
             let path = job.item_path.clone();
 
-            match self.download_job(job, &shutdown).await {
+            match self.download_job(job, &cancel).await {
                 Ok(outcome) => stats.record(outcome, size),
 
                 Err(Error::Cancelled) => {
                     stats.record_failure();
-                    failures.lock().unwrap().push(DownloadFailure {
-                        path,
-                        error: Error::Cancelled,
-                    });
+                    failures
+                        .lock()
+                        .unwrap()
+                        .push(DownloadFailure { path, error: Error::Cancelled });
                     break;
-                }
+                },
 
                 Err(err) => {
                     stats.record_failure();
                     tracing::error!(worker = self.id, path, error = %err, "download failed");
-                    failures
-                        .lock()
-                        .unwrap()
-                        .push(DownloadFailure { path, error: err });
-                }
+                    failures.lock().unwrap().push(DownloadFailure { path, error: err });
+                },
             }
         }
     }
@@ -111,14 +151,12 @@ impl DownloadWorker {
     pub(crate) async fn download_job(
         &mut self,
         job: DownloadJob,
-        shutdown: &CancellationToken,
+        cancel: &Cancel,
     ) -> Result<Outcome, Error> {
         let mut last_error = None;
 
         for link_attempt in 1..=self.ctx.max_link_attempts {
-            if shutdown.is_cancelled() {
-                return Err(Error::Cancelled);
-            }
+            cancel.check()?;
 
             let href = if link_attempt == 1 {
                 job.initial_href.clone()
@@ -131,16 +169,13 @@ impl DownloadWorker {
                 None => {
                     self.ctx
                         .api
-                        .get_download_link(&job.public_key, Some(&job.item_path), shutdown)
+                        .get_download_link(&job.public_key, Some(&job.item_path), cancel)
                         .await?
                         .href
-                }
+                },
             };
 
-            match self
-                .download_to(&link, &job.destination, job.size, &job.checksum, shutdown)
-                .await
-            {
+            match self.download_to(&link, &job.destination, job.size, &job.checksum, cancel).await {
                 Ok(outcome) => return Ok(outcome),
                 Err(err) if err.is_expired_link() => {
                     tracing::warn!(
@@ -151,15 +186,12 @@ impl DownloadWorker {
                     );
                     last_error = Some(err);
                     continue;
-                }
+                },
                 Err(err) => return Err(err),
             }
         }
 
-        Err(Error::LinkExpired {
-            path: job.item_path.clone(),
-        })
-        .inspect_err(|_| {
+        Err(Error::LinkExpired { path: job.item_path.clone() }).inspect_err(|_| {
             if let Some(prev) = last_error {
                 tracing::debug!("last transient error before giving up: {prev}");
             }
@@ -172,7 +204,7 @@ impl DownloadWorker {
         destination: &Path,
         expected_size: u64,
         checksum: &ChecksumSpec,
-        shutdown: &CancellationToken,
+        cancel: &Cancel,
     ) -> Result<Outcome, Error> {
         if let Some(parent) = destination.parent() {
             self.ensure_dir(parent).await?;
@@ -187,164 +219,118 @@ impl DownloadWorker {
             return Ok(Outcome::AlreadyComplete);
         }
 
-        let part_path = to_part_path(destination);
-        let mut last_error: Option<Error> = None;
+        // Clone the policy out *before* borrowing `self` mutably below —
+        // `self.ctx.retry` and `DownloadAttempt { worker: self, .. }`
+        // would otherwise be a simultaneous shared + mutable borrow of `self`.
+        let policy = self.ctx.retry.clone();
 
-        for attempt in 1..=self.ctx.retry.max_attempts {
-            if shutdown.is_cancelled() {
-                return Err(Error::Cancelled);
-            }
-
-            match self
-                .try_download_once(
-                    url,
-                    &part_path,
-                    destination,
-                    expected_size,
-                    checksum,
-                    shutdown,
-                )
-                .await
-            {
-                Ok(outcome) => return Ok(outcome),
-                Err(Error::Cancelled) => return Err(Error::Cancelled),
-                Err(err @ Error::Io { .. }) => return Err(err),
-                Err(err) => match self.ctx.retry.decide(&err, attempt) {
-                    RetryDecision::Abort => return Err(err),
-                    RetryDecision::RetryAfter(delay) => {
-                        last_error = Some(err);
-
-                        if attempt >= self.ctx.retry.max_attempts {
-                            break;
-                        }
-                        if sleep_or_cancel(delay, shutdown).await {
-                            return Err(Error::Cancelled);
-                        }
-                    }
-                },
-            }
-        }
-
-        Err(last_error.unwrap_or(Error::Cancelled))
+        retry::run(
+            &policy,
+            cancel,
+            DownloadAttempt {
+                worker: self,
+                url,
+                destination,
+                expected_size,
+                checksum,
+                cancel,
+            },
+        )
+        .await
     }
 
     async fn try_download_once(
         &mut self,
         url: &str,
-        part_path: &Path,
         destination: &Path,
         expected_size: u64,
         checksum: &ChecksumSpec,
-        shutdown: &CancellationToken,
+        cancel: &Cancel,
     ) -> Result<Outcome, Error> {
-        let mut existing_size = metadata(part_path).await.map(|m| m.len()).unwrap_or(0);
+        let mut state = self.resume.inspect(destination, expected_size).await?;
 
-        if existing_size > expected_size {
-            remove_file(part_path)
-                .await
-                .map_err(|e| io_error(part_path, e))?;
-            existing_size = 0;
+        if matches!(state.action, ResumeAction::Finalize) {
+            self.finalize_existing_part(&state, destination, checksum).await?;
+
+            return Ok(Outcome::AlreadyComplete);
+        }
+
+        if matches!(state.action, ResumeAction::Restart) {
+            self.resume.reset(&state).await?;
+
+            state = self.resume.inspect(destination, expected_size).await?;
         }
 
         let mut headers = HeaderMap::new();
 
-        if existing_size > 0 {
-            let header = format!("bytes={existing_size}-");
-            headers.insert(
-                RANGE,
-                HeaderValue::from_str(&header).map_err(|_| Error::InvalidHeader(header))?,
-            );
-        }
+        self.resume.apply_range(&mut headers, &state)?;
 
-        let response = match self
-            .ctx
-            .http
-            .send_checked(|| self.ctx.http.get(url).headers(headers.clone()))
-            .await
-        {
-            Ok(response) => response,
-            Err(err) if existing_size > 0 && err.is_range_not_satisfiable() => {
-                tracing::warn!(
-                    worker = self.id,
-                    path = %part_path.display(),
-                    "range not satisfiable, discarding partial file and restarting",
-                );
-
-                remove_file(part_path)
-                    .await
-                    .map_err(|e| io_error(part_path, e))?;
-
-                return Err(Error::RangeNotSatisfiable {
-                    path: part_path.to_path_buf(),
-                });
-            }
-            Err(err) => return Err(err),
-        };
-
-        let status = response.status();
-        let mut append = existing_size > 0 && status == StatusCode::PARTIAL_CONTENT;
-
-        if existing_size > 0 && status == StatusCode::OK {
-            remove_file(part_path)
+        let response =
+            match send_checked(&self.ctx.http, self.ctx.http.get(url).headers(headers.clone()))
                 .await
-                .map_err(|e| io_error(part_path, e))?;
-            existing_size = 0;
-            append = false;
+            {
+                Ok(response) => response,
+
+                Err(err) if state.is_resuming() && err.is_range_not_satisfiable() => {
+                    tracing::warn!(
+                        worker = self.id,
+                        path = %state.part_path.display(),
+                        "range not satisfiable, discarding partial file"
+                    );
+
+                    self.resume.reset(&state).await?;
+
+                    return Err(Error::RangeNotSatisfiable { path: state.part_path.clone() });
+                },
+
+                Err(err) => return Err(err),
+            };
+
+        state = self.resume.validate_response(
+            &state,
+            response.status(),
+            response.headers(),
+            expected_size,
+        )?;
+
+        if matches!(state.action, ResumeAction::Restart) {
+            tracing::warn!(
+                worker = self.id,
+                path = %state.part_path.display(),
+                "server ignored Range header, restarting download"
+            );
+
+            self.resume.reset(&state).await?;
+
+            return Err(Error::RangeNotSatisfiable { path: state.part_path.clone() });
         }
 
-        if append {
-            let valid = response
-                .headers()
-                .get(CONTENT_RANGE)
-                .and_then(|h| h.to_str().ok())
-                .map(|v| content_range_starts_at(v, existing_size, expected_size))
-                .unwrap_or(false);
-
-            if !valid {
-                let raw = response
-                    .headers()
-                    .get(CONTENT_RANGE)
-                    .and_then(|h| h.to_str().ok())
-                    .unwrap_or("<missing>")
-                    .to_string();
-
-                return Err(Error::InvalidContentRange {
-                    path: part_path.into(),
-                    raw,
-                });
-            }
-        }
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(append)
-            .write(true)
-            .truncate(!append)
-            .open(part_path)
-            .await
-            .map_err(|e| io_error(part_path, e))?;
+        let mut file = self.resume.open(&state).await?;
 
         let mut stream = response.bytes_stream();
 
         while let Some(chunk) = stream.next().await {
-            if shutdown.is_cancelled() {
-                file.flush().await.ok();
+            if cancel.check().is_err() {
+                let _ = file.flush().await;
                 return Err(Error::Cancelled);
             }
 
             let bytes = chunk.map_err(Error::StreamInterrupted)?;
+
             file.write_all(&bytes)
                 .await
-                .map_err(|e| io_error(part_path, e))?;
+                .map_err(|error| io_error(&state.part_path, error))?;
         }
 
-        file.flush().await.map_err(|e| io_error(part_path, e))?;
+        file.flush().await.map_err(|e| io_error(&state.part_path, e))?;
+
         drop(file);
 
-        let actual_size = metadata(part_path).await.map(|m| m.len()).unwrap_or(0);
+        let actual_size = self.resume.current_size(&state).await?;
+
         if actual_size != expected_size {
             return Err(Error::SizeMismatch {
-                path: part_path.into(),
+                path: state.part_path.into(),
                 expected: expected_size,
                 actual: actual_size,
             });
@@ -353,23 +339,20 @@ impl DownloadWorker {
         if self.ctx.verify_mode == VerificationMode::Checksum
             && !self
                 .verifier
-                .verify(part_path, checksum)
+                .verify(&state.part_path, checksum)
                 .await
-                .map_err(|e| io_error(part_path, e))?
+                .map_err(|error| io_error(&state.part_path, error))?
         {
-            remove_file(part_path)
-                .await
-                .map_err(|e| io_error(part_path, e))?;
-            return Err(Error::ChecksumMismatch {
-                path: part_path.into(),
-            });
+            self.resume.reset(&state).await?;
+
+            return Err(Error::ChecksumMismatch { path: state.part_path.clone() });
         }
 
-        rename(part_path, destination)
+        rename(&state.part_path, destination)
             .await
             .map_err(|e| io_error(destination, e))?;
 
-        Ok(if existing_size > 0 {
+        Ok(if state.is_resuming() {
             Outcome::Resumed
         } else {
             Outcome::Downloaded
@@ -378,9 +361,7 @@ impl DownloadWorker {
 
     async fn ensure_dir(&self, parent: &Path) -> Result<(), Error> {
         if self.created_dirs.insert(parent.to_path_buf()) {
-            create_dir_all(parent)
-                .await
-                .map_err(|e| io_error(parent, e))?;
+            create_dir_all(parent).await.map_err(|e| io_error(parent, e))?;
         }
         Ok(())
     }

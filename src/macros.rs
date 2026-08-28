@@ -44,7 +44,9 @@ macro_rules! field_enum {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::fields::FieldPath;
+    use std::collections::HashSet;
+
+    use crate::model::{ResourceField, fields::FieldPath};
 
     field_enum! {
         enum Inner {
@@ -90,5 +92,13 @@ mod tests {
             }
         }
         assert_eq!(OnlyLeaf::Only.to_path(), "only");
+    }
+
+    #[test]
+    fn default_matches_all() {
+        let default_set: HashSet<_> =
+            ResourceField::default().iter().map(|f| f.to_path()).collect();
+        let all_set: HashSet<_> = ResourceField::all().iter().map(|f| f.to_path()).collect();
+        assert!(default_set.is_subset(&all_set));
     }
 }

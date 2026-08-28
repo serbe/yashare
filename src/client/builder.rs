@@ -3,7 +3,7 @@ use std::time::Duration;
 use reqwest::{Client, ClientBuilder};
 use url::Url;
 
-use crate::{Error, YaShareClient, api::retry::RetryPolicy, checksum::VerificationMode};
+use crate::{Error, YaShareClient, checksum::VerificationMode, retry::RetryPolicy};
 
 const DEFAULT_API_BASE: &str = "https://cloud-api.yandex.net/v1/disk";
 const DEFAULT_USER_AGENT: &str = concat!("yashare/", env!("CARGO_PKG_VERSION"));
@@ -26,10 +26,10 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             api_base: Url::parse(DEFAULT_API_BASE).expect("default API URL is valid"),
-            retry_policy: RetryPolicy::default_conditions(DEFAULT_MAX_RETRIES),
-            max_link_attempts: DEFAULT_MAX_LINK_ATTEMPTS,
-            max_concurrent_downloads: DEFAULT_MAX_CONCURRENT_DOWNLOADS,
-            max_listing_workers: DEFAULT_MAX_LISTING_WORKERS,
+            retry_policy: RetryPolicy::default_conditions(DEFAULT_MAX_RETRIES.max(1)),
+            max_link_attempts: DEFAULT_MAX_LINK_ATTEMPTS.max(1),
+            max_concurrent_downloads: DEFAULT_MAX_CONCURRENT_DOWNLOADS.max(1),
+            max_listing_workers: DEFAULT_MAX_LISTING_WORKERS.max(1),
             verify_mode: VerificationMode::default(),
         }
     }
@@ -55,7 +55,7 @@ impl YaShareClientBuilder {
     }
 
     pub fn max_link_attempts(mut self, max_link_attempts: usize) -> Self {
-        self.config.max_link_attempts = max_link_attempts;
+        self.config.max_link_attempts = max_link_attempts.max(1);
         self
     }
 

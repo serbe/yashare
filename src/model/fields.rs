@@ -117,11 +117,7 @@ pub trait FieldPath {
 }
 
 pub fn build_fields(fields: &[ResourceField]) -> String {
-    fields
-        .iter()
-        .map(FieldPath::to_path)
-        .collect::<Vec<_>>()
-        .join(",")
+    fields.iter().map(FieldPath::to_path).collect::<Vec<_>>().join(",")
 }
 
 impl ResourceField {
@@ -211,10 +207,7 @@ mod tests {
             ResourceField::Embedded(EmbeddedField::Items(ItemField::Size)),
         ]);
 
-        assert_eq!(
-            fields,
-            "name,path,_embedded.items.name,_embedded.items.size"
-        );
+        assert_eq!(fields, "name,path,_embedded.items.name,_embedded.items.size");
     }
 
     #[test]
@@ -288,9 +281,6 @@ mod tests {
         .cloned()
         .collect();
 
-        assert_eq!(
-            actual, expected,
-            "Default fields should contain all expected fields"
-        );
+        assert_eq!(actual, expected, "Default fields should contain all expected fields");
     }
 }

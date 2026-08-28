@@ -55,6 +55,18 @@ impl DownloadStats {
         self.bytes_skipped.load(Ordering::Relaxed)
     }
 
+    pub fn report(&self) -> String {
+        format!(
+            "Downloaded: {}, Resumed: {}, Skipped: {}, Failed: {}, Total: {}, Bytes: {}",
+            self.downloaded(),
+            self.resumed(),
+            self.skipped(),
+            self.failed(),
+            self.total(),
+            self.bytes_downloaded()
+        )
+    }
+
     #[inline]
     pub fn record(&self, outcome: Outcome, size: u64) {
         self.total.fetch_add(1, Ordering::Relaxed);
@@ -63,15 +75,15 @@ impl DownloadStats {
             Outcome::Downloaded => {
                 self.downloaded.fetch_add(1, Ordering::Relaxed);
                 self.bytes_downloaded.fetch_add(size, Ordering::Relaxed);
-            }
+            },
             Outcome::Resumed => {
                 self.resumed.fetch_add(1, Ordering::Relaxed);
                 self.bytes_resumed.fetch_add(size, Ordering::Relaxed);
-            }
+            },
             Outcome::AlreadyComplete => {
                 self.skipped.fetch_add(1, Ordering::Relaxed);
                 self.bytes_skipped.fetch_add(size, Ordering::Relaxed);
-            }
+            },
         }
     }
 }

@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-use crate::checksum::ChecksumSpec;
+use crate::{checksum::ChecksumSpec, model::ResourceType};
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Item {
     pub name: Option<String>,
     #[serde(rename = "type")]
-    pub type_field: Option<String>,
+    pub type_field: Option<ResourceType>,
     pub path: Option<String>,
     pub size: Option<u64>,
     pub md5: Option<String>,
@@ -16,11 +16,11 @@ pub struct Item {
 
 impl Item {
     pub fn is_dir(&self) -> bool {
-        self.type_field.as_deref() == Some("dir")
+        self.type_field == Some(ResourceType::Dir)
     }
 
     pub fn is_file(&self) -> bool {
-        self.type_field.as_deref() == Some("file")
+        self.type_field == Some(ResourceType::File)
     }
 
     pub fn checksum_spec(&self) -> ChecksumSpec {
