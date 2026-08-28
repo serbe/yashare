@@ -1,4 +1,5 @@
 mod api;
+mod cancel;
 mod checksum;
 mod client;
 mod download;
@@ -6,7 +7,7 @@ mod error;
 mod macros;
 mod model;
 mod public_key;
-mod utils;
+mod retry;
 mod walker;
 
 pub const CHUNK_SIZE: usize = 1024 * 1024;

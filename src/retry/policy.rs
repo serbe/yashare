@@ -5,21 +5,21 @@ use rand::{RngExt, rng};
 use crate::Error;
 
 #[derive(Debug, Clone, Copy)]
-pub enum RetryDecision {
+pub(crate) enum RetryDecision {
     RetryAfter(Duration),
     Abort,
 }
 
-pub type RetryCondition = Arc<dyn Fn(&Error, usize) -> RetryDecision + Send + Sync>;
+pub(crate) type RetryCondition = Arc<dyn Fn(&Error, usize) -> RetryDecision + Send + Sync>;
 
 #[derive(Clone)]
-pub struct RetryPolicy {
-    pub max_attempts: usize,
+pub(crate) struct RetryPolicy {
+    pub(crate) max_attempts: usize,
     condition: RetryCondition,
 }
 
 impl RetryPolicy {
-    pub fn new(
+    pub(crate) fn new(
         max_attempts: usize,
         condition: impl Fn(&Error, usize) -> RetryDecision + Send + Sync + 'static,
     ) -> Self {
@@ -29,29 +29,29 @@ impl RetryPolicy {
         }
     }
 
-    pub fn default_conditions(max_attempts: usize) -> Self {
+    pub(crate) fn default_conditions(max_attempts: usize) -> Self {
         Self::new(max_attempts, |error, attempt| {
             let backoff =
                 exponential_backoff(attempt, Duration::from_secs(2), Duration::from_secs(60));
 
             match error {
-                Error::Connect(_) | Error::StreamInterrupted(_) | Error::BodyInterrupted(_) => {
+                Error::Http(_) | Error::StreamInterrupted(_) | Error::BodyInterrupted(_) => {
                     RetryDecision::RetryAfter(backoff)
-                }
+                },
                 Error::Status { retry_after, .. } if error.is_expired_link() => {
                     let _ = retry_after;
                     RetryDecision::Abort
-                }
+                },
                 Error::Status { retry_after, .. } => {
                     RetryDecision::RetryAfter(retry_after.unwrap_or(backoff))
-                }
+                },
                 Error::Api { .. } if error.is_expired_link() => RetryDecision::Abort,
                 Error::LinkExpired { .. } | Error::InvalidContentRange { .. } => {
                     RetryDecision::RetryAfter(backoff)
-                }
+                },
                 Error::SizeMismatch { .. } | Error::ChecksumMismatch { .. } => {
                     RetryDecision::RetryAfter(backoff)
-                }
+                },
                 Error::RangeNotSatisfiable { .. } => RetryDecision::RetryAfter(backoff),
                 _ => RetryDecision::Abort,
             }
