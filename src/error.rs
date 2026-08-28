@@ -5,6 +5,139 @@ use reqwest::StatusCode;
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    // -------------------------------------------------------------------------
+    // HTTP / transport
+    // -------------------------------------------------------------------------
+    #[error("HTTP request failed: {0}")]
+    Http(#[source] reqwest::Error),
+
+    #[error("HTTP request returned status {0}")]
+    HttpStatus(StatusCode),
+
+    #[error("request was rate limited (HTTP 429) {retry_after:?}")]
+    RateLimited { retry_after: Option<Duration> },
+
+    #[error("invalid HTTP header value: {0}")]
+    InvalidHeaderValue(String),
+
+    // -------------------------------------------------------------------------
+    // Filesystem
+    // -------------------------------------------------------------------------
+    #[error("I/O error while accessing {path}: {source}")]
+    Io {
+        path: PathBuf,
+
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("failed to create directory {path}: {source}")]
+    CreateDirectory {
+        path: PathBuf,
+
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("failed to create file {path}: {source}")]
+    CreateFile {
+        path: PathBuf,
+
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("failed to open file {path}: {source}")]
+    OpenFile {
+        path: PathBuf,
+
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("failed to write file {path}: {source}")]
+    WriteFile {
+        path: PathBuf,
+
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("failed to rename {from} to {to}: {source}")]
+    RenameFile {
+        from: PathBuf,
+        to: PathBuf,
+
+        #[source]
+        source: io::Error,
+    },
+
+    // -------------------------------------------------------------------------
+    // Resume / download
+    // -------------------------------------------------------------------------
+    #[error("invalid Content-Range header: {value}")]
+    InvalidContentRange { value: String },
+
+    #[error("invalid Content-Length header: {value}")]
+    InvalidContentLength { value: String },
+
+    #[error(
+        "invalid response for resumed download: \
+             expected HTTP 206, got {status}"
+    )]
+    InvalidResumeResponse { status: StatusCode },
+
+    #[error(
+        "server returned an invalid content range: \
+             expected start {expected_start}, got {actual_start}"
+    )]
+    UnexpectedContentRange { expected_start: u64, actual_start: u64 },
+
+    #[error(
+        "download size mismatch: expected {expected} bytes, \
+             got {actual} bytes"
+    )]
+    DownloadSizeMismatch { expected: u64, actual: u64 },
+
+    #[error(
+        "downloaded file is larger than expected: \
+             expected at most {expected} bytes, got {actual} bytes"
+    )]
+    DownloadTooLarge { expected: u64, actual: u64 },
+
+    #[error("download URL is missing")]
+    MissingDownloadUrl,
+
+    #[error("download filename is missing")]
+    MissingFileName,
+
+    // -------------------------------------------------------------------------
+    // API / response
+    // -------------------------------------------------------------------------
+    #[error("failed to deserialize API response: {0}")]
+    Json(#[source] serde_json::Error),
+
+    #[error("API response is missing required field: {field}")]
+    MissingResponseField { field: &'static str },
+
+    // -------------------------------------------------------------------------
+    // Configuration / validation
+    // -------------------------------------------------------------------------
+    #[error("invalid public URL: {0}")]
+    InvalidUrl(String),
+
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(String),
+
+    // -------------------------------------------------------------------------
+    // Cancellation
+    // -------------------------------------------------------------------------
+    #[error("operation was cancelled")]
+    Cancelled,
+
+    // -------------------------------------------------------------------------
+    // Other
+    // -------------------------------------------------------------------------
     #[error("range not satisfiable for {path}, restarting from scratch")]
     RangeNotSatisfiable { path: PathBuf },
 
@@ -29,9 +162,6 @@ pub enum Error {
     #[error("create client failed")]
     CreateClient,
 
-    #[error("connection failed")]
-    Connect(#[source] reqwest::Error),
-
     #[error("http status {status}")]
     Status {
         status: StatusCode,
@@ -43,9 +173,6 @@ pub enum Error {
 
     #[error("download link expired for {path}")]
     LinkExpired { path: String },
-
-    #[error("invalid Content-Range for {path}: {raw}")]
-    InvalidContentRange { path: PathBuf, raw: String },
 
     #[error("size mismatch for {path}: expected {expected}, got {actual}")]
     SizeMismatch {
@@ -59,16 +186,6 @@ pub enum Error {
 
     #[error("response body interrupted")]
     BodyInterrupted(#[source] reqwest::Error),
-
-    #[error("failed to decode JSON response: {0}")]
-    Json(#[source] serde_json::Error),
-
-    #[error("I/O error for `{path}`: {source}")]
-    Io {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
 
     #[error("invalid path component: {0}")]
     InvalidPath(String),
@@ -84,9 +201,6 @@ pub enum Error {
 
     #[error("incomplete download: expected {expected} bytes, got {actual}")]
     Incomplete { expected: u64, actual: u64 },
-
-    #[error("operation was cancelled")]
-    Cancelled,
 
     #[error("failed to parse URL: {0}")]
     UrlParse(#[from] url::ParseError),
@@ -114,10 +228,7 @@ impl Error {
 }
 
 pub fn io_error(path: impl Into<PathBuf>, source: io::Error) -> Error {
-    Error::Io {
-        path: path.into(),
-        source,
-    }
+    Error::Io { path: path.into(), source }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
