@@ -1,7 +1,4 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{Error, download::worker::Outcome};
 
@@ -92,10 +89,4 @@ impl DownloadStats {
 pub struct DownloadFailure {
     pub path: String,
     pub error: Error,
-}
-
-#[derive(Debug)]
-pub struct DownloadResult {
-    pub stats: Arc<DownloadStats>,
-    pub failures: Vec<DownloadFailure>,
 }

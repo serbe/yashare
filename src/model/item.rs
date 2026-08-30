@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{checksum::ChecksumSpec, model::ResourceType};
+use crate::{fs::ChecksumSpec, model::ResourceType};
 
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Item {

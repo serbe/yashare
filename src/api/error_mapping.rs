@@ -1,8 +1,16 @@
 use std::time::Duration;
 
 use reqwest::{Response, header::RETRY_AFTER};
+use serde::{Deserialize, Serialize};
 
-use crate::{Error, model::ApiErrorResponse};
+use crate::Error;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ApiErrorResponse {
+    pub error: String,
+    pub description: String,
+    pub message: String,
+}
 
 /// Переводит неуспешный HTTP-ответ Yandex.Disk API в доменную `Error`.
 /// Это API-специфичное знание (формат тела ошибки, коды типа
@@ -33,21 +41,4 @@ fn retry_after(response: &Response) -> Option<Duration> {
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_secs)
-}
-
-/// Отправляет запрос один раз и проверяет статус. Используется и
-/// `ResourceClient`, и загрузчиком файлов — оба хотят "послать и получить
-/// либо Response, либо смэппленную ошибку", но ни retry, ни cancellation
-/// сюда не входят: это забота вызывающего кода через `retry::run`.
-pub(crate) async fn send_checked(
-    http: &super::HttpClient,
-    request: reqwest::RequestBuilder,
-) -> Result<Response, Error> {
-    let response = http.send(request).await?;
-
-    if response.status().is_success() {
-        Ok(response)
-    } else {
-        Err(map_error_response(response).await)
-    }
 }

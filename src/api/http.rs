@@ -1,7 +1,7 @@
 use bytes::Bytes;
-use reqwest::{Client, RequestBuilder, Response};
+use reqwest::{Client, RequestBuilder, Response, header::HeaderMap};
 
-use crate::{Error, cancel::Cancel};
+use crate::{Error, api::map_error_response, cancel::Cancel};
 
 /// Чистый транспорт: отправить запрос, прочитать тело. Ничего не знает
 /// про retry-политику, cancellation-семантику решений или формат ошибок
@@ -35,5 +35,24 @@ impl HttpClient {
             Ok(bytes) => Ok(bytes),
             Err(err) => Err(Error::BodyInterrupted(err)),
         }
+    }
+
+    pub(crate) async fn send_checked_with_headers(
+        &self,
+        url: &str,
+        headers: HeaderMap,
+    ) -> Result<Response, Error> {
+        let request = self.get(url).headers(headers);
+        let response = self.send(request).await?;
+
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            Err(map_error_response(response).await)
+        }
+    }
+
+    pub(crate) async fn send_checked(&self, url: &str) -> Result<Response, Error> {
+        self.send_checked_with_headers(url, HeaderMap::new()).await
     }
 }

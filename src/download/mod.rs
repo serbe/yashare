@@ -1,19 +1,25 @@
 mod job;
-mod path_safety;
+mod link_provider;
 mod pool;
+mod result;
 mod resume;
+mod session;
 mod stats;
-mod verification;
 mod worker;
 
 pub(crate) use job::DownloadJob;
+pub(crate) use link_provider::DownloadLinkProvider;
 pub(crate) use pool::DownloadPool;
-pub(crate) use stats::{DownloadFailure, DownloadResult, DownloadStats};
-pub(crate) use worker::{DownloadWorker, Outcome};
+pub use result::DownloadResult;
+pub(crate) use resume::{ResumeAction, ResumeManager, ResumeState};
+pub(crate) use session::DownloadSession;
+pub use stats::{DownloadFailure, DownloadStats};
+pub(crate) use worker::DownloadWorker;
+pub use worker::Outcome;
 
 use crate::{
     api::{HttpClient, ResourceClient},
-    checksum::VerificationMode,
+    fs::VerificationMode,
     retry::RetryPolicy,
 };
 

@@ -14,8 +14,7 @@ use crate::{
         DownloadContext, DownloadFailure, DownloadJob, DownloadPool, DownloadResult, DownloadStats,
         DownloadWorker, Outcome,
     },
-    model::{Item, Resource},
-    public_key::PublicKey,
+    model::{Item, PublicKey, Resource},
     walker::{parallel::ParallelWalker, sequential::Walker},
 };
 

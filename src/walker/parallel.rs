@@ -6,7 +6,12 @@ use std::sync::{
 use async_channel::{bounded, unbounded};
 use futures_util::Stream;
 
-use crate::{Error, api::ResourceClient, cancel::Cancel, model::Item, public_key::PublicKey};
+use crate::{
+    Error,
+    api::ResourceClient,
+    cancel::Cancel,
+    model::{Item, PublicKey},
+};
 
 struct PageTask {
     path: String,
@@ -74,21 +79,21 @@ impl ParallelWalker {
                                 continue;
                             };
 
-                            if task.offset == 0 {
-                                if let Some(total) = embedded.total {
-                                    let mut offset = page_size;
-                                    while offset < total as usize {
-                                        pending.fetch_add(1, Ordering::SeqCst);
-                                        if task_tx
-                                            .send(PageTask { path: task.path.clone(), offset })
-                                            .await
-                                            .is_err()
-                                        {
-                                            pending.fetch_sub(1, Ordering::SeqCst);
-                                            break;
-                                        }
-                                        offset += page_size;
+                            if task.offset == 0
+                                && let Some(total) = embedded.total
+                            {
+                                let mut offset = page_size;
+                                while offset < total as usize {
+                                    pending.fetch_add(1, Ordering::SeqCst);
+                                    if task_tx
+                                        .send(PageTask { path: task.path.clone(), offset })
+                                        .await
+                                        .is_err()
+                                    {
+                                        pending.fetch_sub(1, Ordering::SeqCst);
+                                        break;
                                     }
+                                    offset += page_size;
                                 }
                             }
 

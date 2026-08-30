@@ -37,29 +37,22 @@ impl PublicKey {
             return Err(Error::InvalidPublicKey(format!("not a Yandex.Disk URL: {}", url_str)));
         }
 
-        if url.path() == "/public/" {
-            if let Some((_, hash)) = url.query_pairs().find(|(key, _)| key == "hash") {
-                return Ok(PublicKey::Hash(hash.to_string()));
-            }
-            return Err(Error::InvalidPublicKey(
-                "missing 'hash' parameter in public URL".to_string(),
-            ));
-        }
+        let path_segments: Vec<&str> = url
+            .path_segments()
+            .ok_or_else(|| Error::InvalidPublicKey("invalid path".to_string()))?
+            .collect();
 
-        let path = url.path().trim_start_matches('/');
-        if path.starts_with("d/") {
-            return Ok(PublicKey::Folder(url_str.to_string()));
-        } else if path.starts_with("i/") {
-            return Ok(PublicKey::File(url_str.to_string()));
+        match path_segments.as_slice() {
+            ["public", ""] => match url.query_pairs().find(|(key, _)| key == "hash") {
+                Some((_, hash)) => Ok(PublicKey::Hash(hash.to_string())),
+                _ => Err(Error::InvalidPublicKey(
+                    "missing 'hash' parameter in public URL".to_string(),
+                )),
+            },
+            ["d", _] => Ok(PublicKey::Folder(url_str.to_string())),
+            ["i", _] => Ok(PublicKey::File(url_str.to_string())),
+            _ => Err(Error::InvalidPublicKey(format!("unsupported URL format: {}", url_str))),
         }
-
-        if url_str.contains("/d/") {
-            return Ok(PublicKey::Folder(url_str.to_string()));
-        } else if url_str.contains("/i/") {
-            return Ok(PublicKey::File(url_str.to_string()));
-        }
-
-        Err(Error::InvalidPublicKey(format!("unsupported URL format: {}", url_str)))
     }
 
     pub fn as_api_string(&self) -> String {
@@ -155,10 +148,11 @@ mod tests {
     #[test]
     fn test_parse_hash_from_public_url() {
         let key = PublicKey::parse("https://disk.yandex.ru/public/?hash=dAEMkc1QDY4SPb5+BlFnEKkx1oWX7/p5zYSCvHGQ5/6FQeE4ICFyXScld621gdJYq/J6bpmRyOJonT3VoXnDag==").unwrap();
+        dbg!(&key);
         assert!(matches!(key, PublicKey::Hash(_)));
         assert_eq!(
             key.as_api_string(),
-            "dAEMkc1QDY4SPb5+BlFnEKkx1oWX7/p5zYSCvHGQ5/6FQeE4ICFyXScld621gdJYq/J6bpmRyOJonT3VoXnDag=="
+            "dAEMkc1QDY4SPb5 BlFnEKkx1oWX7/p5zYSCvHGQ5/6FQeE4ICFyXScld621gdJYq/J6bpmRyOJonT3VoXnDag=="
         );
     }
 

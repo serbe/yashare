@@ -2,7 +2,12 @@ use std::collections::VecDeque;
 
 use futures_util::{Stream, stream::try_unfold};
 
-use crate::{Error, api::ResourceClient, cancel::Cancel, model::Item, public_key::PublicKey};
+use crate::{
+    Error,
+    api::ResourceClient,
+    cancel::Cancel,
+    model::{Item, PublicKey},
+};
 
 const DEFAULT_PAGE_SIZE: usize = 1000;
 

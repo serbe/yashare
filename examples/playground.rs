@@ -1,7 +1,7 @@
 use serde_json::to_string_pretty;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
-use yashare::{Error, PublicKey, YaShareClient};
+use yashare::{Error, YaShareClient};
 
 const KEY: &str = "https://disk.yandex.ru/d/965DOIGYMrcE-w";
 

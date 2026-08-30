@@ -13,7 +13,7 @@ pub(crate) enum RetryDecision {
 pub(crate) type RetryCondition = Arc<dyn Fn(&Error, usize) -> RetryDecision + Send + Sync>;
 
 #[derive(Clone)]
-pub(crate) struct RetryPolicy {
+pub struct RetryPolicy {
     pub(crate) max_attempts: usize,
     condition: RetryCondition,
 }

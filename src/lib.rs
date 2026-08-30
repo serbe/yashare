@@ -1,17 +1,19 @@
 mod api;
 mod cancel;
-mod checksum;
 mod client;
 mod download;
 mod error;
-mod macros;
+mod fs;
 mod model;
-mod public_key;
 mod retry;
 mod walker;
 
 pub const CHUNK_SIZE: usize = 1024 * 1024;
 
-pub use client::YaShareClient;
+pub use client::{ClientConfig, YaShareClient, YaShareClientBuilder};
+pub use download::{DownloadFailure, DownloadStats, Outcome};
 pub use error::{Error, Result, io_error};
-pub use public_key::PublicKey;
+pub use fs::VerificationMode;
+pub use model::{
+    Embedded, FieldPath, Item, Resource, ResourceField, ResourceType, Share, build_fields,
+};

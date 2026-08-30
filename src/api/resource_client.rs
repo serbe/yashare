@@ -4,10 +4,9 @@ use url::Url;
 
 use crate::{
     Error,
-    api::{error_mapping, http::HttpClient},
+    api::http::HttpClient,
     cancel::Cancel,
-    model::{Link, Resource, ResourceField, build_fields},
-    public_key::PublicKey,
+    model::{Link, PublicKey, Resource, ResourceField, build_fields},
     retry::{self, RetryPolicy},
 };
 
@@ -154,9 +153,7 @@ impl<'a, T: DeserializeOwned> retry::Attempt for GetJson<'a, T> {
     type Output = T;
 
     async fn attempt(&mut self, _attempt_no: usize) -> Result<T, Error> {
-        let response =
-            error_mapping::send_checked(&self.resource.http, self.resource.http.get(self.url))
-                .await?;
+        let response = self.resource.http.send_checked(self.url).await?;
         let bytes = self.resource.http.read_body(response, self.cancel).await?;
         serde_json::from_slice(&bytes).map_err(Error::Json)
     }

@@ -3,7 +3,7 @@ use std::time::Duration;
 use reqwest::{Client, ClientBuilder};
 use url::Url;
 
-use crate::{Error, YaShareClient, checksum::VerificationMode, retry::RetryPolicy};
+use crate::{Error, YaShareClient, fs::VerificationMode, retry::RetryPolicy};
 
 const DEFAULT_API_BASE: &str = "https://cloud-api.yandex.net/v1/disk";
 const DEFAULT_USER_AGENT: &str = concat!("yashare/", env!("CARGO_PKG_VERSION"));

@@ -21,5 +21,5 @@ impl ChecksumSpec {
 pub enum VerificationMode {
     #[default]
     SizeOnly,
-    Checksum,
+    SizeAndChecksum,
 }

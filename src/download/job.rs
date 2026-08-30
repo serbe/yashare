@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    Error, checksum::ChecksumSpec, download::path_safety::safe_relative_path, model::Item,
-    public_key::PublicKey,
+    Error,
+    fs::{ChecksumSpec, safe_relative_path},
+    model::{Item, PublicKey},
 };
 
 #[derive(Debug, Clone)]

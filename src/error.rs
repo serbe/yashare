@@ -5,20 +5,27 @@ use reqwest::StatusCode;
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    // Некоторые возможные ошибки:
+
+    //     400 — Некорректные данные.
+    //     401 — Не авторизован.
+    //     406 — Ресурс не может быть представлен в запрошенном формате.
+    //     413 — Загрузка файла недоступна. Файл слишком большой.
+    //     423 — Технические работы. Сейчас можно только просматривать и скачивать файлы.
+    //     429 — Слишком много запросов.
+    //     503 — Сервис временно недоступен.
+
     // -------------------------------------------------------------------------
     // HTTP / transport
     // -------------------------------------------------------------------------
     #[error("HTTP request failed: {0}")]
     Http(#[source] reqwest::Error),
 
-    #[error("HTTP request returned status {0}")]
-    HttpStatus(StatusCode),
-
     #[error("request was rate limited (HTTP 429) {retry_after:?}")]
     RateLimited { retry_after: Option<Duration> },
 
     #[error("invalid HTTP header value: {0}")]
-    InvalidHeaderValue(String),
+    InvalidHeader(String),
 
     // -------------------------------------------------------------------------
     // Filesystem
@@ -93,18 +100,6 @@ pub enum Error {
     )]
     UnexpectedContentRange { expected_start: u64, actual_start: u64 },
 
-    #[error(
-        "download size mismatch: expected {expected} bytes, \
-             got {actual} bytes"
-    )]
-    DownloadSizeMismatch { expected: u64, actual: u64 },
-
-    #[error(
-        "downloaded file is larger than expected: \
-             expected at most {expected} bytes, got {actual} bytes"
-    )]
-    DownloadTooLarge { expected: u64, actual: u64 },
-
     #[error("download URL is missing")]
     MissingDownloadUrl,
 
@@ -123,9 +118,6 @@ pub enum Error {
     // -------------------------------------------------------------------------
     // Configuration / validation
     // -------------------------------------------------------------------------
-    #[error("invalid public URL: {0}")]
-    InvalidUrl(String),
-
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
 
@@ -190,17 +182,8 @@ pub enum Error {
     #[error("invalid path component: {0}")]
     InvalidPath(String),
 
-    #[error("invalid Reqwest HTTP header value: {0}")]
-    InvalidReqwestHeader(#[from] reqwest::header::InvalidHeaderValue),
-
-    #[error("invalid HTTP header value: {0}")]
-    InvalidHeader(String),
-
     #[error("unexpected api response: {0}")]
     UnexpectedResponse(String),
-
-    #[error("incomplete download: expected {expected} bytes, got {actual}")]
-    Incomplete { expected: u64, actual: u64 },
 
     #[error("failed to parse URL: {0}")]
     UrlParse(#[from] url::ParseError),

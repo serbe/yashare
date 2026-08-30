@@ -8,7 +8,7 @@ use tokio::{
     io::AsyncReadExt,
 };
 
-use crate::checksum::{ChecksumSpec, VerificationMode};
+use crate::fs::{ChecksumSpec, VerificationMode};
 
 pub(crate) struct FileVerifier {
     buffer: BytesMut,
@@ -40,7 +40,7 @@ impl FileVerifier {
 
         match mode {
             VerificationMode::SizeOnly => Ok(true),
-            VerificationMode::Checksum => self.verify(path, checksum).await,
+            VerificationMode::SizeAndChecksum => self.verify(path, checksum).await,
         }
     }
 
@@ -133,7 +133,7 @@ mod tests {
                 &path,
                 5,
                 &ChecksumSpec::Md5("deadbeef".into()),
-                VerificationMode::Checksum,
+                VerificationMode::SizeAndChecksum,
             )
             .await
             .unwrap();
