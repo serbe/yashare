@@ -1,3 +1,4 @@
+// mod error;
 mod error_mapping;
 mod http;
 mod resource_client;

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     Error,
+    error::{ApiError, ClientError},
     fs::{ChecksumSpec, safe_relative_path},
     model::{Item, PublicKey},
 };
@@ -22,10 +23,9 @@ impl DownloadJob {
         public_key: &PublicKey,
         item: &Item,
     ) -> Result<Self, Error> {
-        let item_path = item
-            .path
-            .as_deref()
-            .ok_or_else(|| Error::InvalidPath("item has no path".to_string()))?;
+        let item_path = item.path.as_deref().ok_or_else(|| {
+            Error::Client(ClientError::InvalidPath("item has no path".to_string()))
+        })?;
         let destination = dest_dir.join(safe_relative_path(item_path)?);
         Self::from_item(public_key, item, destination)
     }
@@ -35,14 +35,13 @@ impl DownloadJob {
         item: &Item,
         destination: PathBuf,
     ) -> Result<Self, Error> {
-        let item_path = item
-            .path
-            .clone()
-            .ok_or_else(|| Error::InvalidPath("item has no path".to_string()))?;
+        let item_path = item.path.clone().ok_or_else(|| {
+            Error::Client(ClientError::InvalidPath("item has no path".to_string()))
+        })?;
 
-        let size = item
-            .size
-            .ok_or_else(|| Error::UnexpectedResponse("item has no size".to_string()))?;
+        let size = item.size.ok_or_else(|| {
+            Error::Api(ApiError::UnexpectedResponse("item has no size".to_string()))
+        })?;
 
         Ok(Self {
             public_key: public_key.clone(),

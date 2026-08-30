@@ -3,7 +3,12 @@ use std::time::Duration;
 use reqwest::{Client, ClientBuilder};
 use url::Url;
 
-use crate::{Error, YaShareClient, fs::VerificationMode, retry::RetryPolicy};
+use crate::{
+    Error, YaShareClient,
+    error::{ClientError, HttpError},
+    fs::VerificationMode,
+    retry::RetryPolicy,
+};
 
 const DEFAULT_API_BASE: &str = "https://cloud-api.yandex.net/v1/disk";
 const DEFAULT_USER_AGENT: &str = concat!("yashare/", env!("CARGO_PKG_VERSION"));
@@ -108,9 +113,11 @@ impl YaShareClientBuilder {
 
     pub fn build(self) -> Result<YaShareClient, Error> {
         if self.config.max_link_attempts == 0 {
-            return Err(Error::InvalidMaxLinkAttempts(self.config.max_link_attempts));
+            return Err(Error::Client(ClientError::InvalidMaxLinkAttempts(
+                self.config.max_link_attempts,
+            )));
         }
-        let http = self.http_builder.build().map_err(|_| Error::CreateClient)?;
+        let http = self.http_builder.build().map_err(|_| Error::Http(HttpError::CreateClient))?;
 
         YaShareClient::from_parts(http, self.config)
     }

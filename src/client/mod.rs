@@ -14,6 +14,7 @@ use crate::{
         DownloadContext, DownloadFailure, DownloadJob, DownloadPool, DownloadResult, DownloadStats,
         DownloadWorker, Outcome,
     },
+    error::ClientError,
     model::{Item, PublicKey, Resource},
     walker::{parallel::ParallelWalker, sequential::Walker},
 };
@@ -67,7 +68,9 @@ impl YaShareClient {
         let root = self.ctx.api.resource_meta(public_key, None, cancel).await?;
 
         if !root.is_dir() {
-            return Err(Error::NotAFolder(root.name.unwrap_or_else(|| public_key.as_api_string())));
+            return Err(Error::Client(ClientError::NotAFolder(
+                root.name.unwrap_or_else(|| public_key.as_api_string()),
+            )));
         }
 
         Ok(root.path.unwrap_or_else(|| "/".to_string()))

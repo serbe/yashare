@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::error::{Error, Result};
+use crate::error::{ClientError, Error, Result};
 
 const INVALID_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
@@ -9,17 +9,17 @@ pub fn safe_relative_path(disk_path: &str) -> Result<PathBuf> {
     let normalized = normalized.trim_start_matches('/');
 
     if normalized.is_empty() {
-        return Err(Error::InvalidPath("empty relative path".to_string()));
+        return Err(Error::Client(ClientError::InvalidPath("empty relative path".to_string())));
     }
 
     let mut parts = Vec::new();
     for part in normalized.split('/') {
         if part.is_empty() || part == "." || part == ".." {
-            return Err(Error::InvalidPath(part.to_string()));
+            return Err(Error::Client(ClientError::InvalidPath(part.to_string())));
         }
         let safe_part = safe_filename_component(part);
         if safe_part.is_empty() {
-            return Err(Error::InvalidPath(part.to_string()));
+            return Err(Error::Client(ClientError::InvalidPath(part.to_string())));
         }
         parts.push(safe_part);
     }

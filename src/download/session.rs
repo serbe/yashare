@@ -9,6 +9,7 @@ use crate::{
     api::HttpClient,
     cancel::Cancel,
     download::{ResumeAction, ResumeManager, ResumeState},
+    error::HttpError,
     fs::{ChecksumSpec, FileVerifier},
     io_error,
 };
@@ -118,7 +119,7 @@ impl<'a> DownloadSession<'a> {
         while let Some(chunk) = stream.next().await {
             cancel.check()?;
 
-            let bytes = chunk.map_err(Error::StreamInterrupted)?;
+            let bytes = chunk.map_err(HttpError::StreamInterrupted)?;
 
             file.write_all(&bytes).await.map_err(|e| io_error(&state.part_path, e))?;
         }

@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use url::Url;
 
-use crate::Error;
+use crate::{Error, error::ClientError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PublicKey {
@@ -15,7 +15,7 @@ impl PublicKey {
     pub fn parse<S: AsRef<str>>(input: S) -> Result<Self, Error> {
         let input = input.as_ref().trim();
         if input.is_empty() {
-            return Err(Error::InvalidPublicKey("empty input".to_string()));
+            return Err(Error::Client(ClientError::InvalidPublicKey("empty input".to_string())));
         }
 
         let decoded = urlencoding::decode(input)
@@ -30,28 +30,37 @@ impl PublicKey {
     }
 
     fn parse_url(url_str: &str) -> Result<Self, Error> {
-        let url = Url::parse(url_str)
-            .map_err(|_| Error::InvalidPublicKey(format!("invalid URL: {}", url_str)))?;
+        let url = Url::parse(url_str).map_err(|_| {
+            Error::Client(ClientError::InvalidPublicKey(format!("invalid URL: {}", url_str)))
+        })?;
 
         if url.host_str() != Some("disk.yandex.ru") {
-            return Err(Error::InvalidPublicKey(format!("not a Yandex.Disk URL: {}", url_str)));
+            return Err(Error::Client(ClientError::InvalidPublicKey(format!(
+                "not a Yandex.Disk URL: {}",
+                url_str
+            ))));
         }
 
         let path_segments: Vec<&str> = url
             .path_segments()
-            .ok_or_else(|| Error::InvalidPublicKey("invalid path".to_string()))?
+            .ok_or_else(|| {
+                Error::Client(ClientError::InvalidPublicKey("invalid path".to_string()))
+            })?
             .collect();
 
         match path_segments.as_slice() {
             ["public", ""] => match url.query_pairs().find(|(key, _)| key == "hash") {
                 Some((_, hash)) => Ok(PublicKey::Hash(hash.to_string())),
-                _ => Err(Error::InvalidPublicKey(
+                _ => Err(Error::Client(ClientError::InvalidPublicKey(
                     "missing 'hash' parameter in public URL".to_string(),
-                )),
+                ))),
             },
             ["d", _] => Ok(PublicKey::Folder(url_str.to_string())),
             ["i", _] => Ok(PublicKey::File(url_str.to_string())),
-            _ => Err(Error::InvalidPublicKey(format!("unsupported URL format: {}", url_str))),
+            _ => Err(Error::Client(ClientError::InvalidPublicKey(format!(
+                "unsupported URL format: {}",
+                url_str
+            )))),
         }
     }
 
@@ -177,7 +186,7 @@ mod tests {
     #[test]
     fn test_parse_error_empty() {
         let result = PublicKey::parse("");
-        assert!(matches!(result, Err(Error::InvalidPublicKey(_))));
+        assert!(matches!(result, Err(Error::Client(ClientError::InvalidPublicKey(_)))));
     }
 
     #[test]

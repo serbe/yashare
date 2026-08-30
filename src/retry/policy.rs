@@ -35,17 +35,10 @@ impl RetryPolicy {
                 exponential_backoff(attempt, Duration::from_secs(2), Duration::from_secs(60));
 
             match error {
-                Error::Http(_) | Error::StreamInterrupted(_) | Error::BodyInterrupted(_) => {
+                Error::Http(http_err) if http_err.is_transient() => {
                     RetryDecision::RetryAfter(backoff)
                 },
-                Error::Status { retry_after, .. } if error.is_expired_link() => {
-                    let _ = retry_after;
-                    RetryDecision::Abort
-                },
-                Error::Status { retry_after, .. } => {
-                    RetryDecision::RetryAfter(retry_after.unwrap_or(backoff))
-                },
-                Error::Api { .. } if error.is_expired_link() => RetryDecision::Abort,
+                Error::Api(api_err) => api_err.retry_decision(backoff),
                 Error::LinkExpired { .. } | Error::InvalidContentRange { .. } => {
                     RetryDecision::RetryAfter(backoff)
                 },

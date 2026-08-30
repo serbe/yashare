@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use reqwest::{Client, RequestBuilder, Response, header::HeaderMap};
 
-use crate::{Error, api::map_error_response, cancel::Cancel};
+use crate::{Error, api::map_error_response, cancel::Cancel, error::HttpError};
 
 /// Чистый транспорт: отправить запрос, прочитать тело. Ничего не знает
 /// про retry-политику, cancellation-семантику решений или формат ошибок
@@ -21,7 +21,7 @@ impl HttpClient {
     }
 
     pub(crate) async fn send(&self, request: RequestBuilder) -> Result<Response, Error> {
-        request.send().await.map_err(Error::Http)
+        request.send().await.map_err(|e| Error::Http(HttpError::Request(e)))
     }
 
     /// Чтение тела — единственное место, где транспорту всё же нужна
@@ -33,7 +33,7 @@ impl HttpClient {
     ) -> Result<Bytes, Error> {
         match cancel.race(response.bytes()).await? {
             Ok(bytes) => Ok(bytes),
-            Err(err) => Err(Error::BodyInterrupted(err)),
+            Err(err) => Err(Error::Http(HttpError::BodyInterrupted(err))),
         }
     }
 
@@ -48,7 +48,7 @@ impl HttpClient {
         if response.status().is_success() {
             Ok(response)
         } else {
-            Err(map_error_response(response).await)
+            Err(Error::Api(map_error_response(response).await))
         }
     }
 

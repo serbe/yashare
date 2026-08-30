@@ -5,7 +5,7 @@ use reqwest::{
     header::{CONTENT_RANGE, HeaderMap, HeaderValue, RANGE},
 };
 
-use crate::Error;
+use crate::{Error, error::HttpError};
 
 /// Решение о том, как обрабатывать загрузку файла
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,8 +102,8 @@ impl ResumeStateManager {
         let offset = state.offset();
         let value = format!("bytes={offset}-");
 
-        let header_value =
-            HeaderValue::from_str(&value).map_err(|_| Error::InvalidHeader(value))?;
+        let header_value = HeaderValue::from_str(&value)
+            .map_err(|_| Error::Http(HttpError::InvalidHeader(value)))?;
 
         headers.insert(RANGE, header_value);
 

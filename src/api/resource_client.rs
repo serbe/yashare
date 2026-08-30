@@ -6,6 +6,7 @@ use crate::{
     Error,
     api::http::HttpClient,
     cancel::Cancel,
+    error::{ApiError, ClientError},
     model::{Link, PublicKey, Resource, ResourceField, build_fields},
     retry::{self, RetryPolicy},
 };
@@ -132,7 +133,9 @@ impl ResourceClient {
     fn get_public_api_url(&self) -> Result<Url, Error> {
         let mut url = self.api_base.clone();
         url.path_segments_mut()
-            .map_err(|_| Error::InvalidPath(self.api_base.clone().to_string()))?
+            .map_err(|_| {
+                Error::Client(ClientError::InvalidPath(self.api_base.clone().to_string()))
+            })?
             .push("public")
             .push("resources");
         Ok(url)
@@ -155,6 +158,6 @@ impl<'a, T: DeserializeOwned> retry::Attempt for GetJson<'a, T> {
     async fn attempt(&mut self, _attempt_no: usize) -> Result<T, Error> {
         let response = self.resource.http.send_checked(self.url).await?;
         let bytes = self.resource.http.read_body(response, self.cancel).await?;
-        serde_json::from_slice(&bytes).map_err(Error::Json)
+        serde_json::from_slice(&bytes).map_err(|e| Error::Api(ApiError::MalformedResponse(e)))
     }
 }
