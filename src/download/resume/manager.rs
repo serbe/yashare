@@ -5,9 +5,9 @@ use tokio::fs::File;
 
 use crate::{
     Error,
-    download::{
-        ResumeState,
-        resume::{ResumeFileManager, ResumeStateManager},
+    download::resume::{
+        file::ResumeFileManager,
+        state::{ResumeState, ResumeStateManager},
     },
 };
 
@@ -102,7 +102,7 @@ mod tests {
     use tempfile::tempdir;
     use tokio::fs::write;
 
-    use crate::download::{ResumeAction, ResumeManager};
+    use crate::download::resume::{manager::ResumeManager, state::ResumeAction};
 
     #[tokio::test]
     async fn inspect_missing_file_returns_start() {

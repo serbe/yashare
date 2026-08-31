@@ -11,10 +11,7 @@ use crate::{
     Error,
     api::{HttpClient, ResourceClient},
     cancel::Cancel,
-    download::{
-        DownloadContext, DownloadFailure, DownloadJob, DownloadPool, DownloadResult, DownloadStats,
-        DownloadWorker, Outcome,
-    },
+    download::DownloadContext,
     error::ClientError,
     model::{Item, PublicKey, Resource},
     walker::{parallel::ParallelWalker, sequential::Walker},

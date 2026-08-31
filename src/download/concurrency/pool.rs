@@ -13,9 +13,11 @@ use crate::{
     cancel::Cancel,
     download::{
         DownloadContext,
-        job::DownloadJob,
-        stats::{DownloadFailure, DownloadStats},
-        worker::DownloadWorker,
+        execution::worker::DownloadWorker,
+        model::{
+            job::DownloadJob,
+            stats::{DownloadFailure, DownloadStats},
+        },
     },
 };
 

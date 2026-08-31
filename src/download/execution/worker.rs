@@ -12,12 +12,15 @@ use crate::{
     CHUNK_SIZE, Error,
     cancel::Cancel,
     download::{
-        DownloadContext, DownloadLinkProvider, DownloadSession,
-        job::DownloadJob,
-        resume::ResumeManager,
-        stats::{DownloadFailure, DownloadStats},
+        DownloadContext,
+        model::{
+            job::DownloadJob,
+            outcome::Outcome,
+            stats::{DownloadFailure, DownloadStats},
+        },
+        transport::{link_provider::DownloadLinkProvider, session::DownloadSession},
     },
-    fs::{ChecksumSpec, FileVerifier},
+    fs::ChecksumSpec,
     io_error,
     retry::{Attempt, run},
 };
@@ -48,21 +51,12 @@ impl<'a> Attempt for DownloadAttempt<'a> {
     }
 }
 
-/// Single file download outcome returned by download_item().
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
-    AlreadyComplete,
-    Resumed,
-    Downloaded,
-}
-
 /// Download worker responsible for downloading a single file.
 pub(crate) struct DownloadWorker {
     id: usize,
     ctx: DownloadContext,
     created_dirs: Arc<DashSet<PathBuf>>,
-    verifier: FileVerifier,
-    resume: ResumeManager,
+    session_factory: SessionFactory,
     links: DownloadLinkProvider,
 }
 
@@ -78,8 +72,8 @@ impl DownloadWorker {
             id,
             ctx,
             created_dirs,
-            verifier: FileVerifier::new(CHUNK_SIZE),
-            resume: ResumeManager::new(),
+            // verifier: FileVerifier::new(CHUNK_SIZE),
+            // resume: ResumeManager::new(),
             links,
         }
     }

@@ -1,21 +1,8 @@
-mod job;
-mod link_provider;
-mod pool;
-mod result;
+mod concurrency;
+mod execution;
+mod model;
 mod resume;
-mod session;
-mod stats;
-mod worker;
-
-pub(crate) use job::DownloadJob;
-pub(crate) use link_provider::DownloadLinkProvider;
-pub(crate) use pool::DownloadPool;
-pub use result::DownloadResult;
-pub(crate) use resume::{ResumeAction, ResumeManager, ResumeState};
-pub(crate) use session::DownloadSession;
-pub use stats::{DownloadFailure, DownloadStats};
-pub(crate) use worker::DownloadWorker;
-pub use worker::Outcome;
+mod transport;
 
 use crate::{
     api::{HttpClient, ResourceClient},

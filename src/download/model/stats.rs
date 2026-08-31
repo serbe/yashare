@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::{Error, download::worker::Outcome};
+use crate::{Error, download::model::outcome::Outcome};
 
 /// Statistics tracking download operations.
 #[derive(Debug, Default)]

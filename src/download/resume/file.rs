@@ -5,7 +5,7 @@ use std::{
 
 use tokio::fs::{File, OpenOptions, metadata, remove_file, rename};
 
-use crate::{Error, download::ResumeState, io_error};
+use crate::{Error, download::resume::state::ResumeState, io_error};
 
 /// Manages file operations for resuming a download.
 #[derive(Debug, Clone, Copy, Default)]
@@ -86,9 +86,9 @@ mod tests {
         io::AsyncWriteExt,
     };
 
-    use crate::download::{
-        ResumeState,
-        resume::{ResumeAction, ResumeFileManager},
+    use crate::download::resume::{
+        file::ResumeFileManager,
+        state::{ResumeAction, ResumeState},
     };
 
     #[tokio::test]

@@ -10,10 +10,10 @@ mod walker;
 
 pub const CHUNK_SIZE: usize = 1024 * 1024;
 
-pub use client::{ClientConfig, YaShareClient, YaShareClientBuilder};
-pub use download::{DownloadFailure, DownloadStats, Outcome};
+// pub use client::{ClientConfig, YaShareClient, YaShareClientBuilder};
+// pub use download::{DownloadFailure, DownloadStats, model::outcome::Outcome};
 pub use error::{Error, Result, io_error};
-pub use fs::VerificationMode;
-pub use model::{
-    Embedded, FieldPath, Item, Resource, ResourceField, ResourceType, Share, build_fields,
-};
+// pub use fs::VerificationMode;
+// pub use model::{
+//     Embedded, FieldPath, Item, Resource, ResourceField, ResourceType, Share, build_fields,
+// };

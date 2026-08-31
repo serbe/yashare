@@ -9,12 +9,18 @@ use tokio::{
 use tracing::warn;
 
 use crate::{
-    Error, Outcome, VerificationMode,
+    Error,
     api::{HttpClient, map_download_error},
     cancel::Cancel,
-    download::{ResumeAction, ResumeManager, ResumeState},
+    download::{
+        model::outcome::Outcome,
+        resume::{
+            manager::ResumeManager,
+            state::{ResumeAction, ResumeState},
+        },
+    },
     error::HttpError,
-    fs::{ChecksumSpec, FileVerifier},
+    fs::{ChecksumSpec, FileVerifier, VerificationMode},
     io_error,
 };
 

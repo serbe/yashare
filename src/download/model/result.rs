@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{DownloadFailure, DownloadStats};
+use crate::download::model::stats::{DownloadFailure, DownloadStats};
 
 /// Represents the result of a download, including statistics and any failures that occurred.
 #[derive(Debug)]
