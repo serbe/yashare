@@ -1,26 +1,30 @@
 use std::path::Path;
 
 use bytes::BytesMut;
+use hex::encode;
 use md5::{Digest, Md5};
 use sha2::Sha256;
 use tokio::{
-    fs::{File, try_exists},
+    fs::{File, metadata, try_exists},
     io::AsyncReadExt,
 };
 
 use crate::fs::{ChecksumSpec, VerificationMode};
 
+/// Verifies the size and checksum of a file.
 pub(crate) struct FileVerifier {
     buffer: BytesMut,
 }
 
 impl FileVerifier {
+    /// Creates a new `FileVerifier` with the specified buffer size.
     pub(crate) fn new(buffer_size: usize) -> Self {
         let mut buffer = BytesMut::with_capacity(buffer_size);
         buffer.resize(buffer_size, 0);
         Self { buffer }
     }
 
+    /// Verifies that the file at the given path matches the expected size and checksum.
     pub(crate) async fn file_matches(
         &mut self,
         path: &Path,
@@ -32,7 +36,7 @@ impl FileVerifier {
             return Ok(false);
         }
 
-        let metadata = tokio::fs::metadata(path).await?;
+        let metadata = metadata(path).await?;
 
         if metadata.len() != expected_size {
             return Ok(false);
@@ -44,6 +48,7 @@ impl FileVerifier {
         }
     }
 
+    /// Verifies that the file at the given path matches the expected checksum.
     pub(crate) async fn verify(
         &mut self,
         path: &Path,
@@ -67,6 +72,7 @@ impl FileVerifier {
         }
     }
 
+    /// Hashes the file at the given path using the specified digest algorithm.
     async fn hash_file<D: Digest + Default>(&mut self, path: &Path) -> std::io::Result<String> {
         let mut file = File::open(path).await?;
         let mut hasher = D::default();
@@ -79,9 +85,10 @@ impl FileVerifier {
             hasher.update(&self.buffer[..n]);
         }
 
-        Ok(hex::encode(hasher.finalize()))
+        Ok(encode(hasher.finalize()))
     }
 
+    /// Hashes the file at the given path using both MD5 and SHA-256 algorithms.
     async fn hash_file_both(&mut self, path: &Path) -> std::io::Result<(String, String)> {
         let mut file = File::open(path).await?;
         let mut md5 = Md5::default();
@@ -97,20 +104,23 @@ impl FileVerifier {
             sha256.update(chunk);
         }
 
-        Ok((hex::encode(md5.finalize()), hex::encode(sha256.finalize())))
+        Ok((encode(md5.finalize()), encode(sha256.finalize())))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use tempfile::tempdir;
+    use tokio::fs::write;
+
     use super::*;
     use crate::CHUNK_SIZE;
 
     #[tokio::test]
     async fn size_only_mode_skips_hashing() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let path = dir.path().join("f.bin");
-        tokio::fs::write(&path, b"hello").await.unwrap();
+        write(&path, b"hello").await.unwrap();
 
         let mut verifier = FileVerifier::new(CHUNK_SIZE);
         let matches = verifier
@@ -123,9 +133,9 @@ mod tests {
 
     #[tokio::test]
     async fn checksum_mode_detects_mismatch() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let path = dir.path().join("f.bin");
-        tokio::fs::write(&path, b"hello").await.unwrap();
+        write(&path, b"hello").await.unwrap();
 
         let mut verifier = FileVerifier::new(CHUNK_SIZE);
         let matches = verifier

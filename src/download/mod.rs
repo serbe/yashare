@@ -23,6 +23,8 @@ use crate::{
     retry::RetryPolicy,
 };
 
+/// Represents the context for a download session, including HTTP client, API client, and retry
+/// policy.
 #[derive(Clone)]
 pub(crate) struct DownloadContext {
     pub(crate) http: HttpClient,

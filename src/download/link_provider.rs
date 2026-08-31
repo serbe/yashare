@@ -5,11 +5,13 @@ pub(crate) struct DownloadLinkProvider {
     max_attempts: usize,
 }
 
+/// A provider for download links that uses the Yandex Disk API to retrieve them.
 impl DownloadLinkProvider {
     pub fn new(api: ResourceClient, max_attempts: usize) -> Self {
         Self { api, max_attempts }
     }
 
+    /// Retrieves a download link for the given job, with retries and cancellation support.
     pub async fn get_link(
         &self,
         job: &DownloadJob,
@@ -37,6 +39,7 @@ impl DownloadLinkProvider {
         Ok(link)
     }
 
+    /// Returns the maximum number of download attempts allowed.
     pub fn max_attempts(&self) -> usize {
         self.max_attempts
     }

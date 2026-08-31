@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Item;
 
+/// Represents the type of a resource (directory or file).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ResourceType {
@@ -11,14 +12,18 @@ pub enum ResourceType {
 }
 
 impl ResourceType {
+    /// Returns `true` if the resource type is a directory.
     pub fn is_dir(&self) -> bool {
         matches!(self, Self::Dir)
     }
+
+    /// Returns `true` if the resource type is a file.
     pub fn is_file(&self) -> bool {
         matches!(self, Self::File)
     }
 }
 
+/// Full metadata response from Yandex.Disk API.
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Resource {
     pub name: Option<String>,
@@ -50,11 +55,13 @@ pub struct Resource {
 }
 
 impl Resource {
+    /// Returns `true` if the resource is a directory.
     pub fn is_dir(&self) -> bool {
         self.type_field == Some(ResourceType::Dir)
     }
 }
 
+/// Container for paginated directory contents.
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Embedded {
     pub total: Option<u64>,
@@ -66,6 +73,7 @@ pub struct Embedded {
     pub public_key: Option<String>,
 }
 
+/// Represents a shared resource.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Share {
     pub is_owned: Option<bool>,
@@ -73,12 +81,14 @@ pub struct Share {
     pub rights: Option<String>,
 }
 
+/// Represents the comment IDs for a resource.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct CommentIds {
     pub public_resource: Option<String>,
     pub private_resource: Option<String>,
 }
 
+/// Represents the EXIF metadata for a photo.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Exif {
     pub date_time: Option<String>,
@@ -86,6 +96,7 @@ pub struct Exif {
     pub gps_longitude: Option<String>,
 }
 
+/// Represents a photo size.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct PhotoSize {
     pub url: Option<String>,

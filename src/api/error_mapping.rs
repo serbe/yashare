@@ -1,22 +1,25 @@
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
-use reqwest::{Response, header::RETRY_AFTER};
+use reqwest::{Response, StatusCode, header::RETRY_AFTER};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::error::ApiError;
+use crate::{
+    Error,
+    error::{ApiError, HttpError},
+};
 
+/// Represents an error response from the Yandex.Disk API.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ApiErrorResponse {
     pub error: String,
     pub description: String,
     pub message: String,
     #[serde(default)]
-    pub details: Option<serde_json::Value>,
+    pub details: Option<Value>,
 }
 
-/// Переводит неуспешный HTTP-ответ Yandex.Disk API в `ApiError`.
-/// Это API-специфичное знание (формат тела ошибки, коды типа
-/// `DiskNotFoundError`) — оно не должно жить в универсальном HTTP-клиенте.
+/// Maps a non-successful HTTP response from Yandex.Disk API to an `ApiError`.
 pub(crate) async fn map_error_response(response: Response) -> ApiError {
     let status = response.status();
     let retry_after = retry_after(&response);
@@ -37,6 +40,25 @@ pub(crate) async fn map_error_response(response: Response) -> ApiError {
     }
 }
 
+/// Maps a download error from the HTTP response and path.
+pub(crate) fn map_download_error(response: &Response, path: &Path) -> Error {
+    let status = response.status();
+    let retry_after = retry_after(response);
+
+    match status {
+        StatusCode::FORBIDDEN | StatusCode::GONE => {
+            Error::LinkExpired { path: path.display().to_string() }
+        },
+        StatusCode::RANGE_NOT_SATISFIABLE => {
+            Error::RangeNotSatisfiable { path: path.to_path_buf() }
+        },
+        StatusCode::TOO_MANY_REQUESTS => Error::Http(HttpError::RateLimited { retry_after }),
+        StatusCode::SERVICE_UNAVAILABLE => Error::Http(HttpError::ServiceUnavailable),
+        status => Error::Http(HttpError::UnexpectedStatus(status)),
+    }
+}
+
+/// Extracts the `Retry-After` header from the response, if present.
 fn retry_after(response: &Response) -> Option<Duration> {
     response
         .headers()

@@ -1,3 +1,4 @@
+/// Specifies which checksums to verify.
 #[derive(Debug, Clone)]
 pub enum ChecksumSpec {
     Md5(String),
@@ -7,6 +8,7 @@ pub enum ChecksumSpec {
 }
 
 impl ChecksumSpec {
+    /// Creates a `ChecksumSpec` from the given MD5 and SHA-256 checksum strings.
     pub fn from_parts(md5: Option<String>, sha256: Option<String>) -> Self {
         match (md5, sha256) {
             (Some(md5), Some(sha256)) => Self::Both { md5, sha256 },
@@ -17,6 +19,7 @@ impl ChecksumSpec {
     }
 }
 
+/// Controls file integrity verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VerificationMode {
     #[default]

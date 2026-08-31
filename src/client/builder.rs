@@ -3,12 +3,7 @@ use std::time::Duration;
 use reqwest::{Client, ClientBuilder};
 use url::Url;
 
-use crate::{
-    Error, YaShareClient,
-    error::{ClientError, HttpError},
-    fs::VerificationMode,
-    retry::RetryPolicy,
-};
+use crate::{Error, YaShareClient, error::HttpError, fs::VerificationMode, retry::RetryPolicy};
 
 const DEFAULT_API_BASE: &str = "https://cloud-api.yandex.net/v1/disk";
 const DEFAULT_USER_AGENT: &str = concat!("yashare/", env!("CARGO_PKG_VERSION"));
@@ -17,6 +12,7 @@ const DEFAULT_MAX_LINK_ATTEMPTS: usize = 3;
 const DEFAULT_MAX_CONCURRENT_DOWNLOADS: usize = 6;
 const DEFAULT_MAX_LISTING_WORKERS: usize = 6;
 
+/// Configuration for the [`YaShareClient`].
 #[derive(Clone)]
 pub struct ClientConfig {
     pub api_base: Url,
@@ -27,6 +23,7 @@ pub struct ClientConfig {
     pub verify_mode: VerificationMode,
 }
 
+/// Default implementation for [`ClientConfig`].
 impl Default for ClientConfig {
     fn default() -> Self {
         Self {
@@ -40,6 +37,7 @@ impl Default for ClientConfig {
     }
 }
 
+/// Builder for creating a [`YaShareClient`].
 pub struct YaShareClientBuilder {
     config: ClientConfig,
     http_builder: ClientBuilder,
@@ -59,64 +57,70 @@ impl YaShareClientBuilder {
         Self::default()
     }
 
+    /// Retry attempts for expired download links.
     pub fn max_link_attempts(mut self, max_link_attempts: usize) -> Self {
         self.config.max_link_attempts = max_link_attempts.max(1);
         self
     }
 
+    /// Maximum number of concurrent downloads.
     pub fn max_concurrent_downloads(mut self, max_concurrent_downloads: usize) -> Self {
         self.config.max_concurrent_downloads = max_concurrent_downloads.max(1);
         self
     }
 
+    /// Maximum number of listing workers.
     pub fn max_listing_workers(mut self, max_listing_workers: usize) -> Self {
         self.config.max_listing_workers = max_listing_workers.max(1);
         self
     }
 
+    /// Verification mode for the HTTP client.
     pub fn verify_mode(mut self, verify_mode: VerificationMode) -> Self {
         self.config.verify_mode = verify_mode;
         self
     }
 
+    /// Timeout for the HTTP client.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.http_builder = self.http_builder.timeout(timeout);
 
         self
     }
 
+    /// Connect timeout for the HTTP client.
     pub fn connect_timeout(mut self, timeout: Duration) -> Self {
         self.http_builder = self.http_builder.connect_timeout(timeout);
 
         self
     }
 
+    /// User agent for the HTTP client.
     pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
         self.http_builder = self.http_builder.user_agent(user_agent.into());
         self
     }
 
+    /// API base URL for the HTTP client.
     pub fn api_base(mut self, url: Url) -> Self {
         self.config.api_base = url;
         self
     }
 
+    /// API base URL for the HTTP client.
     pub fn api_base_str(mut self, url: impl AsRef<str>) -> Result<Self, Error> {
         self.config.api_base = Url::parse(url.as_ref())?;
         Ok(self)
     }
 
+    /// Retry policy for the HTTP client.
     pub fn retry_policy(mut self, retry_policy: RetryPolicy) -> Self {
         self.config.retry_policy = retry_policy;
         self
     }
 
+    /// Builds the [`YaShareClient`] from the configured HTTP client and configuration.
     pub fn build(self) -> Result<YaShareClient, Error> {
-        if self.config.max_link_attempts == 0 {
-            return Err(Error::Client(ClientError::InvalidMaxLinkAttempts(
-                self.config.max_link_attempts,
-            )));
-        }
         let http = self.http_builder.build().map_err(|_| Error::Http(HttpError::CreateClient))?;
 
         YaShareClient::from_parts(http, self.config)

@@ -4,6 +4,7 @@ use crate::error::{ClientError, Error, Result};
 
 const INVALID_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
+/// Sanitizes a relative path by replacing invalid characters and trimming leading slashes.
 pub fn safe_relative_path(disk_path: &str) -> Result<PathBuf> {
     let normalized = disk_path.replace('\\', "/");
     let normalized = normalized.trim_start_matches('/');
@@ -27,6 +28,8 @@ pub fn safe_relative_path(disk_path: &str) -> Result<PathBuf> {
     Ok(parts.iter().collect())
 }
 
+/// Sanitizes a filename component by replacing invalid characters and trimming leading/trailing
+/// spaces/dots.
 pub fn safe_filename_component(name: &str) -> String {
     let mut result = name.trim().to_string();
 

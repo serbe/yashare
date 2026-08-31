@@ -4,16 +4,14 @@ pub(crate) use policy::{RetryDecision, RetryPolicy};
 
 use crate::{Error, cancel::Cancel};
 
-/// One retryable operation. Implemented per call-site instead of passed as
-/// a closure, because an `FnMut(usize) -> Fut` can't express "each call
-/// re-borrows `&mut self` for a fresh, non-overlapping lifetime" — the
-/// closure form only works when the operation only needs `&self`.
+/// Represents a retryable operation that can be attempted multiple times.
 pub(crate) trait Attempt {
     type Output;
 
     async fn attempt(&mut self, attempt_no: usize) -> Result<Self::Output, Error>;
 }
 
+/// Runs a retryable operation according to the given policy and cancellation token.
 pub(crate) async fn run<A: Attempt>(
     policy: &RetryPolicy,
     cancel: &Cancel,

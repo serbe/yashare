@@ -3,8 +3,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use async_channel::Receiver;
 use dashmap::DashSet;
 use tokio::fs::create_dir_all;
+use tracing::{debug, error, warn};
 
 use crate::{
     CHUNK_SIZE, Error,
@@ -16,9 +18,11 @@ use crate::{
         stats::{DownloadFailure, DownloadStats},
     },
     fs::{ChecksumSpec, FileVerifier},
-    io_error, retry,
+    io_error,
+    retry::{Attempt, run},
 };
 
+/// A single download attempt for a file.
 struct DownloadAttempt<'a> {
     worker: &'a mut DownloadWorker,
     url: &'a str,
@@ -28,7 +32,7 @@ struct DownloadAttempt<'a> {
     cancel: &'a Cancel,
 }
 
-impl<'a> retry::Attempt for DownloadAttempt<'a> {
+impl<'a> Attempt for DownloadAttempt<'a> {
     type Output = Outcome;
 
     async fn attempt(&mut self, _attempt_no: usize) -> Result<Outcome, Error> {
@@ -44,6 +48,7 @@ impl<'a> retry::Attempt for DownloadAttempt<'a> {
     }
 }
 
+/// Single file download outcome returned by download_item().
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     AlreadyComplete,
@@ -51,6 +56,7 @@ pub enum Outcome {
     Downloaded,
 }
 
+/// Download worker responsible for downloading a single file.
 pub(crate) struct DownloadWorker {
     id: usize,
     ctx: DownloadContext,
@@ -61,6 +67,7 @@ pub(crate) struct DownloadWorker {
 }
 
 impl DownloadWorker {
+    /// Creates a new download worker with the given ID, context, and created directories.
     pub(crate) fn new(
         id: usize,
         ctx: DownloadContext,
@@ -77,13 +84,16 @@ impl DownloadWorker {
         }
     }
 
+    /// Creates a new download worker with the given ID, context, and created directories.
     pub(crate) fn single(ctx: DownloadContext) -> Self {
         Self::new(0, ctx, Arc::new(DashSet::new()))
     }
 
+    /// Runs the download worker, processing download jobs from the receiver and recording
+    /// statistics and failures.
     pub(crate) async fn run(
         mut self,
-        receiver: async_channel::Receiver<DownloadJob>,
+        receiver: Receiver<DownloadJob>,
         stats: Arc<DownloadStats>,
         failures: Arc<Mutex<Vec<DownloadFailure>>>,
         cancel: Cancel,
@@ -112,13 +122,14 @@ impl DownloadWorker {
 
                 Err(err) => {
                     stats.record_failure();
-                    tracing::error!(worker = self.id, path, error = %err, "download failed");
+                    error!(worker = self.id, path, error = %err, "download failed");
                     failures.lock().unwrap().push(DownloadFailure { path, error: err });
                 },
             }
         }
     }
 
+    /// Downloads a single job, retrying as needed until success or cancellation.
     pub(crate) async fn download_job(
         &mut self,
         job: DownloadJob,
@@ -132,7 +143,7 @@ impl DownloadWorker {
             match self.download_to(&link, &job.destination, job.size, &job.checksum, cancel).await {
                 Ok(outcome) => return Ok(outcome),
                 Err(err) if err.is_expired_link() => {
-                    tracing::warn!(
+                    warn!(
                         worker = self.id,
                         path = %job.item_path,
                         attempt = link_attempt,
@@ -147,11 +158,13 @@ impl DownloadWorker {
 
         Err(Error::LinkExpired { path: job.item_path.clone() }).inspect_err(|_| {
             if let Some(prev) = last_error {
-                tracing::debug!("last transient error before giving up: {prev}");
+                debug!("last transient error before giving up: {prev}");
             }
         })
     }
 
+    /// Downloads a single file to the specified destination, retrying as needed until success or
+    /// cancellation.
     async fn download_to(
         &mut self,
         url: &str,
@@ -173,12 +186,9 @@ impl DownloadWorker {
             return Ok(Outcome::AlreadyComplete);
         }
 
-        // Clone the policy out *before* borrowing `self` mutably below —
-        // `self.ctx.retry` and `DownloadAttempt { worker: self, .. }`
-        // would otherwise be a simultaneous shared + mutable borrow of `self`.
         let policy = self.ctx.retry.clone();
 
-        retry::run(
+        run(
             &policy,
             cancel,
             DownloadAttempt {
@@ -193,6 +203,7 @@ impl DownloadWorker {
         .await
     }
 
+    /// Tries to download a single file once, without retrying.
     async fn try_download_once(
         &mut self,
         url: &str,
@@ -211,10 +222,15 @@ impl DownloadWorker {
         session.run(url, destination, expected_size, checksum, cancel).await
     }
 
+    /// Ensures that the parent directory of the given path exists, creating it if necessary.
     async fn ensure_dir(&self, parent: &Path) -> Result<(), Error> {
-        if self.created_dirs.insert(parent.to_path_buf()) {
-            create_dir_all(parent).await.map_err(|e| io_error(parent, e))?;
+        if self.created_dirs.contains(parent) {
+            return Ok(());
         }
+
+        create_dir_all(parent).await.map_err(|e| io_error(parent, e))?;
+
+        self.created_dirs.insert(parent.to_path_buf());
         Ok(())
     }
 }

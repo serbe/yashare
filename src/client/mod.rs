@@ -5,6 +5,7 @@ use std::{path::Path, sync::Arc};
 pub use builder::{ClientConfig, YaShareClientBuilder};
 use futures_util::{Stream, TryStreamExt};
 use reqwest::Client;
+use tracing::error;
 
 use crate::{
     Error,
@@ -19,6 +20,7 @@ use crate::{
     walker::{parallel::ParallelWalker, sequential::Walker},
 };
 
+/// The main client for interacting with Yandex.Disk public shares.
 #[derive(Clone)]
 pub struct YaShareClient {
     ctx: DownloadContext,
@@ -27,6 +29,8 @@ pub struct YaShareClient {
 }
 
 impl Default for YaShareClient {
+    /// Creates a default [`YaShareClient`] using the [`YaShareClientBuilder`] with default
+    /// configuration.
     fn default() -> Self {
         YaShareClientBuilder::default()
             .build()
@@ -35,6 +39,7 @@ impl Default for YaShareClient {
 }
 
 impl YaShareClient {
+    /// Creates a [`YaShareClient`] from the HTTP client and configuration.
     pub(crate) fn from_parts(http: Client, config: ClientConfig) -> Result<Self, Error> {
         let http = HttpClient::new(http);
 
@@ -56,10 +61,12 @@ impl YaShareClient {
         })
     }
 
+    /// Sets the fields to request from the API for resource metadata.
     pub fn set_fields(&mut self, fields: String) {
         self.ctx.api.set_fields(fields);
     }
 
+    /// Resolves the root path of a public folder.
     async fn resolve_root_path(
         &self,
         public_key: &PublicKey,
@@ -76,6 +83,7 @@ impl YaShareClient {
         Ok(root.path.unwrap_or_else(|| "/".to_string()))
     }
 
+    /// Fetches metadata for a resource (file or folder) from the API.
     pub async fn resource_meta(
         &self,
         public_key: &PublicKey,
@@ -85,6 +93,7 @@ impl YaShareClient {
         self.ctx.api.resource_meta(public_key, path, cancel).await
     }
 
+    /// Returns a stream of all items in a public folder (recursive).
     pub async fn walk(
         &self,
         public_key: &PublicKey,
@@ -95,6 +104,7 @@ impl YaShareClient {
         Ok(Walker::new(self.ctx.api.clone(), public_key, root_path, cancel.clone()).into_stream())
     }
 
+    /// Downloads a single item from the API to the specified directory.
     pub async fn download_item(
         &self,
         public_key: &PublicKey,
@@ -109,6 +119,7 @@ impl YaShareClient {
         worker.download_job(job, cancel).await
     }
 
+    /// Downloads all items in a public folder to the specified directory.
     pub async fn download_all(
         &self,
         public_key: &PublicKey,
@@ -154,7 +165,7 @@ impl YaShareClient {
                 },
                 Err(err) => {
                     stats.record_failure();
-                    tracing::error!(path, error = %err, "skipping item");
+                    error!(path, error = %err, "skipping item");
                     failures.push(DownloadFailure { path, error: err });
                 },
             }

@@ -1,9 +1,11 @@
 use std::str::FromStr;
 
 use url::Url;
+use urlencoding::decode;
 
 use crate::{Error, error::ClientError};
 
+/// Represents a public key for a Yandex.Disk resource.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PublicKey {
     Folder(String),
@@ -12,15 +14,14 @@ pub enum PublicKey {
 }
 
 impl PublicKey {
+    /// Parses URL or hash string.
     pub fn parse<S: AsRef<str>>(input: S) -> Result<Self, Error> {
         let input = input.as_ref().trim();
         if input.is_empty() {
             return Err(Error::Client(ClientError::InvalidPublicKey("empty input".to_string())));
         }
 
-        let decoded = urlencoding::decode(input)
-            .map(|s| s.to_string())
-            .unwrap_or_else(|_| input.to_string());
+        let decoded = decode(input).map(|s| s.to_string()).unwrap_or_else(|_| input.to_string());
 
         if decoded.starts_with("http://") || decoded.starts_with("https://") {
             return Self::parse_url(&decoded);
@@ -29,6 +30,7 @@ impl PublicKey {
         Ok(PublicKey::Hash(decoded))
     }
 
+    /// Parses a public key from a URL string.
     fn parse_url(url_str: &str) -> Result<Self, Error> {
         let url = Url::parse(url_str).map_err(|_| {
             Error::Client(ClientError::InvalidPublicKey(format!("invalid URL: {}", url_str)))
@@ -64,6 +66,7 @@ impl PublicKey {
         }
     }
 
+    /// Returns the public key as a string suitable for use in API requests.
     pub fn as_api_string(&self) -> String {
         match self {
             PublicKey::Folder(url) | PublicKey::File(url) => url.clone(),
@@ -71,18 +74,22 @@ impl PublicKey {
         }
     }
 
+    /// Returns whether the public key represents a folder.
     pub fn is_folder(&self) -> bool {
         matches!(self, PublicKey::Folder(_))
     }
 
+    /// Returns whether the public key represents a file.
     pub fn is_file(&self) -> bool {
         matches!(self, PublicKey::File(_))
     }
 
+    /// Returns whether the public key represents a hash.
     pub fn is_hash(&self) -> bool {
         matches!(self, PublicKey::Hash(_))
     }
 
+    /// Returns the folder URL if the public key represents a folder, otherwise `None`.
     pub fn as_folder(&self) -> Option<&str> {
         match self {
             PublicKey::Folder(url) => Some(url),
@@ -90,6 +97,7 @@ impl PublicKey {
         }
     }
 
+    /// Returns the file URL if the public key represents a file, otherwise `None`.
     pub fn as_file(&self) -> Option<&str> {
         match self {
             PublicKey::File(url) => Some(url),
@@ -97,6 +105,7 @@ impl PublicKey {
         }
     }
 
+    /// Returns the hash if the public key represents a hash, otherwise `None`.
     pub fn as_hash(&self) -> Option<&str> {
         match self {
             PublicKey::Hash(hash) => Some(hash),
@@ -105,6 +114,7 @@ impl PublicKey {
     }
 }
 
+/// Parses a public key from a string.
 impl FromStr for PublicKey {
     type Err = Error;
 
@@ -113,6 +123,7 @@ impl FromStr for PublicKey {
     }
 }
 
+/// Formats a public key as a string.
 impl std::fmt::Display for PublicKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

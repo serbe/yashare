@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use reqwest::StatusCode;
+use serde_json::Value;
 
 use crate::retry::RetryDecision;
 
@@ -23,7 +24,7 @@ pub enum ApiError {
         error: String,
         message: String,
         description: String,
-        details: Option<serde_json::Value>,
+        details: Option<Value>,
         retry_after: Option<Duration>,
     },
 

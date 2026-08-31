@@ -4,6 +4,8 @@
 
 use std::time::Duration;
 
+use reqwest::StatusCode;
+
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum HttpError {
@@ -24,6 +26,12 @@ pub enum HttpError {
 
     #[error("response body interrupted")]
     BodyInterrupted(#[source] reqwest::Error),
+
+    #[error("service unavailable")]
+    ServiceUnavailable,
+
+    #[error("unexpected status code: {0}")]
+    UnexpectedStatus(StatusCode),
 }
 
 impl HttpError {

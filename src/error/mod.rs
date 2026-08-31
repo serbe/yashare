@@ -2,12 +2,11 @@ mod api;
 mod client;
 mod http;
 
+use std::{io, path::PathBuf};
+
 pub use api::ApiError;
 pub use client::ClientError;
 pub use http::HttpError;
-
-use std::{io, path::PathBuf};
-
 use reqwest::StatusCode;
 
 #[derive(thiserror::Error, Debug)]
@@ -110,11 +109,13 @@ pub enum Error {
 
 impl Error {
     pub(crate) fn is_expired_link(&self) -> bool {
-        matches!(self, Error::Api(api) if api.is_expired_link())
+        matches!(self, Error::LinkExpired { .. })
+            || matches!(self, Error::Api(api) if api.is_expired_link())
     }
 
     pub(crate) fn is_range_not_satisfiable(&self) -> bool {
-        matches!(self, Error::Api(api) if api.is_range_not_satisfiable())
+        matches!(self, Error::RangeNotSatisfiable { .. })
+            || matches!(self, Error::Api(api) if api.is_range_not_satisfiable())
     }
 }
 

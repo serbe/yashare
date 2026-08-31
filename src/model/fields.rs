@@ -116,11 +116,13 @@ pub trait FieldPath {
     }
 }
 
+/// Builds a comma-separated list of field paths from a slice of `ResourceField` values.
 pub fn build_fields(fields: &[ResourceField]) -> String {
     fields.iter().map(FieldPath::to_path).collect::<Vec<_>>().join(",")
 }
 
 impl ResourceField {
+    /// Returns the default set of fields to include in an item or share response.
     pub fn default() -> Vec<Self> {
         vec![
             Self::Name,
@@ -144,6 +146,8 @@ impl ResourceField {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use crate::model::{
         CommentIdsField, EmbeddedField, ExifField, FieldPath, ItemField, PhotoSizeField,
         ResourceField, ShareField, build_fields,
@@ -242,12 +246,8 @@ mod tests {
 
     #[test]
     fn all_fields_do_not_contain_duplicates() {
-        use std::collections::HashSet;
-
         let fields = ResourceField::all();
-
         let rendered: Vec<String> = fields.iter().map(FieldPath::to_path).collect();
-
         let unique: HashSet<_> = rendered.iter().collect();
 
         assert_eq!(rendered.len(), unique.len(), "duplicate fields found");
@@ -255,8 +255,6 @@ mod tests {
 
     #[test]
     fn build_default_fields() {
-        use std::collections::HashSet;
-
         let fields = build_fields(&ResourceField::default());
         let actual: HashSet<&str> = fields.split(',').collect();
 

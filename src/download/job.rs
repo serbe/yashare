@@ -7,6 +7,7 @@ use crate::{
     model::{Item, PublicKey},
 };
 
+/// A job for downloading an item from the Yandex Disk API.
 #[derive(Debug, Clone)]
 pub struct DownloadJob {
     pub public_key: PublicKey,
@@ -18,6 +19,7 @@ pub struct DownloadJob {
 }
 
 impl DownloadJob {
+    /// Creates a new download job for the given item and destination directory.
     pub(crate) fn for_download(
         dest_dir: &Path,
         public_key: &PublicKey,
@@ -30,6 +32,7 @@ impl DownloadJob {
         Self::from_item(public_key, item, destination)
     }
 
+    /// Creates a new download job from an item and destination path.
     pub fn from_item(
         public_key: &PublicKey,
         item: &Item,

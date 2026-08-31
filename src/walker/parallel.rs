@@ -3,8 +3,9 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use async_channel::{bounded, unbounded};
+use async_channel::{Sender, bounded, unbounded};
 use futures_util::Stream;
+use tokio::spawn;
 
 use crate::{
     Error,
@@ -65,7 +66,7 @@ impl ParallelWalker {
             let pending = pending.clone();
             let page_size = self.page_size;
 
-            tokio::spawn(async move {
+            spawn(async move {
                 while let Ok(task) = task_rx.recv().await {
                     if cancel.check().is_err() {
                         finish(&pending, &task_tx, &item_tx);
@@ -145,8 +146,8 @@ impl ParallelWalker {
 
 fn finish(
     pending: &Arc<AtomicUsize>,
-    task_tx: &async_channel::Sender<PageTask>,
-    item_tx: &async_channel::Sender<Result<Item, Error>>,
+    task_tx: &Sender<PageTask>,
+    item_tx: &Sender<Result<Item, Error>>,
 ) {
     if pending.fetch_sub(1, Ordering::SeqCst) == 1 {
         task_tx.close();
@@ -154,11 +155,7 @@ fn finish(
     }
 }
 
-async fn dispatch(
-    pending: &Arc<AtomicUsize>,
-    task_tx: &async_channel::Sender<PageTask>,
-    task: PageTask,
-) {
+async fn dispatch(pending: &Arc<AtomicUsize>, task_tx: &Sender<PageTask>, task: PageTask) {
     pending.fetch_add(1, Ordering::SeqCst);
     if task_tx.send(task).await.is_err() {
         pending.fetch_sub(1, Ordering::SeqCst);

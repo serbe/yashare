@@ -4,9 +4,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use async_channel::bounded;
+use async_channel::{Sender, bounded};
 use dashmap::DashSet;
-use tokio::task::JoinHandle;
+use tokio::{spawn, task::JoinHandle};
 
 use crate::{
     Error,
@@ -19,13 +19,15 @@ use crate::{
     },
 };
 
+/// Manages a pool of download workers, handling job submission and failure tracking.
 pub(crate) struct DownloadPool {
-    sender: async_channel::Sender<DownloadJob>,
+    sender: Sender<DownloadJob>,
     handles: Vec<JoinHandle<()>>,
     failures: Arc<Mutex<Vec<DownloadFailure>>>,
 }
 
 impl DownloadPool {
+    /// Spawns a new download pool with the specified number of workers and context.
     pub(crate) fn spawn(
         worker_count: usize,
         ctx: DownloadContext,
@@ -40,22 +42,19 @@ impl DownloadPool {
             .map(|id| {
                 let worker = DownloadWorker::new(id, ctx.clone(), created_dirs.clone());
 
-                tokio::spawn(worker.run(
-                    receiver.clone(),
-                    stats.clone(),
-                    failures.clone(),
-                    cancel.clone(),
-                ))
+                spawn(worker.run(receiver.clone(), stats.clone(), failures.clone(), cancel.clone()))
             })
             .collect();
 
         Self { sender, handles, failures }
     }
 
+    /// Submits a download job to the pool.
     pub(crate) async fn submit(&self, job: DownloadJob) -> Result<(), Error> {
         self.sender.send(job).await.map_err(|_| Error::Cancelled)
     }
 
+    /// Waits for all download workers to complete and returns any failures that occurred.
     pub(crate) async fn join(self) -> Vec<DownloadFailure> {
         drop(self.sender);
 
