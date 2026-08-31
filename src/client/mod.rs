@@ -1,17 +1,27 @@
-mod builder;
+pub(crate) mod builder;
 
 use std::{path::Path, sync::Arc};
 
-pub use builder::{ClientConfig, YaShareClientBuilder};
 use futures_util::{Stream, TryStreamExt};
 use reqwest::Client;
 use tracing::error;
 
 use crate::{
     Error,
-    api::{HttpClient, ResourceClient},
+    api::{http::HttpClient, resource_client::ResourceClient},
     cancel::Cancel,
-    download::DownloadContext,
+    client::builder::{ClientConfig, YaShareClientBuilder},
+    download::{
+        DownloadContext,
+        concurrency::pool::DownloadPool,
+        execution::worker::DownloadWorker,
+        model::{
+            job::DownloadJob,
+            outcome::Outcome,
+            result::DownloadResult,
+            stats::{DownloadFailure, DownloadStats},
+        },
+    },
     error::ClientError,
     model::{Item, PublicKey, Resource},
     walker::{parallel::ParallelWalker, sequential::Walker},

@@ -9,7 +9,7 @@ use tokio::{
     io::AsyncReadExt,
 };
 
-use crate::fs::{ChecksumSpec, VerificationMode};
+use crate::fs::checksum::{ChecksumSpec, VerificationMode};
 
 /// Verifies the size and checksum of a file.
 pub(crate) struct FileVerifier {

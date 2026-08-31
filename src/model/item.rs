@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{fs::ChecksumSpec, model::ResourceType};
+use crate::{fs::checksum::ChecksumSpec, model::ResourceType};
 
 /// Represents a single file or directory item from the API response.
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]

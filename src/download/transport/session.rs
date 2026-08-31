@@ -10,7 +10,7 @@ use tracing::warn;
 
 use crate::{
     Error,
-    api::{HttpClient, map_download_error},
+    api::{error_mapping::map_download_error, http::HttpClient},
     cancel::Cancel,
     download::{
         model::outcome::Outcome,
@@ -20,7 +20,10 @@ use crate::{
         },
     },
     error::HttpError,
-    fs::{ChecksumSpec, FileVerifier, VerificationMode},
+    fs::{
+        checksum::{ChecksumSpec, VerificationMode},
+        verifier::FileVerifier,
+    },
     io_error,
 };
 

@@ -1,4 +1,6 @@
-use crate::{Error, api::ResourceClient, cancel::Cancel, download::model::job::DownloadJob};
+use crate::{
+    Error, api::resource_client::ResourceClient, cancel::Cancel, download::model::job::DownloadJob,
+};
 
 pub(crate) struct DownloadLinkProvider {
     api: ResourceClient,

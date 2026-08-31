@@ -1,7 +1,7 @@
 use serde_json::to_string_pretty;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
-use yashare::{Error, YaShareClient};
+use yashare::Error;
 
 const KEY: &str = "https://disk.yandex.ru/d/965DOIGYMrcE-w";
 
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Error> {
         token_for_signals.cancel();
     });
 
-    let client = YaShareClient::default();
+    // let client = YaShareClient::default();
 
     // let public_key = PublicKey::parse(KEY)?;
 

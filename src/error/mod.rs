@@ -1,6 +1,6 @@
-mod api;
-mod client;
-mod http;
+pub(crate) mod api;
+pub(crate) mod client;
+pub(crate) mod http;
 
 use std::{io, path::PathBuf};
 

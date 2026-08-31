@@ -8,11 +8,11 @@ use url::Url;
 
 use crate::{
     Error,
-    api::{http::HttpClient, map_error_response},
+    api::{error_mapping::map_error_response, http::HttpClient},
     cancel::Cancel,
     error::{ApiError, ClientError},
     model::{Link, PublicKey, Resource, ResourceField, build_fields},
-    retry::{Attempt, RetryPolicy, run},
+    retry::{Attempt, policy::RetryPolicy, run},
 };
 
 /// A client for interacting with the Yandex Share API.

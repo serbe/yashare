@@ -1,13 +1,13 @@
-mod concurrency;
-mod execution;
-mod model;
-mod resume;
-mod transport;
+pub(crate) mod concurrency;
+pub(crate) mod execution;
+pub(crate) mod model;
+pub(crate) mod resume;
+pub(crate) mod transport;
 
 use crate::{
-    api::{HttpClient, ResourceClient},
-    fs::VerificationMode,
-    retry::RetryPolicy,
+    api::{http::HttpClient, resource_client::ResourceClient},
+    fs::checksum::VerificationMode,
+    retry::policy::RetryPolicy,
 };
 
 /// Represents the context for a download session, including HTTP client, API client, and retry
