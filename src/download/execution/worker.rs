@@ -18,9 +18,9 @@ use crate::{
             outcome::Outcome,
             stats::{DownloadFailure, DownloadStats},
         },
-        transport::{link_provider::DownloadLinkProvider, session::DownloadSession},
+        transport::{factory::SessionFactory, link_provider::DownloadLinkProvider},
     },
-    fs::ChecksumSpec,
+    fs::checksum::ChecksumSpec,
     io_error,
     retry::{Attempt, run},
 };
@@ -56,7 +56,7 @@ pub(crate) struct DownloadWorker {
     id: usize,
     ctx: DownloadContext,
     created_dirs: Arc<DashSet<PathBuf>>,
-    session_factory: SessionFactory,
+    sessions: SessionFactory,
     links: DownloadLinkProvider,
 }
 
@@ -70,10 +70,9 @@ impl DownloadWorker {
         let links = DownloadLinkProvider::new(ctx.api.clone(), ctx.max_link_attempts);
         Self {
             id,
+            sessions: SessionFactory::new(&ctx),
             ctx,
             created_dirs,
-            // verifier: FileVerifier::new(CHUNK_SIZE),
-            // resume: ResumeManager::new(),
             links,
         }
     }
@@ -172,8 +171,8 @@ impl DownloadWorker {
         }
 
         if self
-            .verifier
-            .file_matches(destination, expected_size, checksum, self.ctx.verify_mode)
+            .sessions
+            .file_matches(destination, expected_size, checksum)
             .await
             .map_err(|e| io_error(destination, e))?
         {
@@ -206,14 +205,10 @@ impl DownloadWorker {
         checksum: &ChecksumSpec,
         cancel: &Cancel,
     ) -> Result<Outcome, Error> {
-        let mut session = DownloadSession::new(
-            &self.ctx.http,
-            &self.resume,
-            &mut self.verifier,
-            self.ctx.verify_mode,
-        );
-
-        session.run(url, destination, expected_size, checksum, cancel).await
+        self.sessions
+            .session()
+            .run(url, destination, expected_size, checksum, cancel)
+            .await
     }
 
     /// Ensures that the parent directory of the given path exists, creating it if necessary.
