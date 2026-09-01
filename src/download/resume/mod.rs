@@ -1,3 +1,6 @@
-pub(crate) mod file;
-pub(crate) mod manager;
-pub(crate) mod state;
+mod file;
+mod manager;
+mod state;
+
+pub(crate) use manager::ResumeManager;
+pub(crate) use state::{ResumeAction, ResumeState};

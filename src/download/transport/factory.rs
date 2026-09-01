@@ -2,14 +2,9 @@ use std::path::Path;
 
 use crate::{
     CHUNK_SIZE,
-    api::http::HttpClient,
-    download::{
-        DownloadContext, resume::manager::ResumeManager, transport::session::DownloadSession,
-    },
-    fs::{
-        checksum::{ChecksumSpec, VerificationMode},
-        verifier::FileVerifier,
-    },
+    api::HttpClient,
+    download::{DownloadContext, resume::ResumeManager, transport::session::DownloadSession},
+    fs::{ChecksumSpec, FileVerifier, VerificationMode},
 };
 
 /// Владеет состоянием, нужным для скачивания файлов одним воркером:

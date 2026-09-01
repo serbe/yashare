@@ -1,7 +1,8 @@
 use std::{future::Future, time::Duration};
 
-use tokio::{select, time::sleep};
+use tokio::{select, signal::ctrl_c, spawn, time::sleep};
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 use crate::Error;
 
@@ -10,8 +11,13 @@ use crate::Error;
 pub struct Cancel(CancellationToken);
 
 impl Cancel {
-    /// Creates a new `Cancel` instance with the given cancellation token.
-    pub fn new(token: CancellationToken) -> Self {
+    /// Creates a new `Cancel` instance with a new cancellation token.
+    pub fn new() -> Self {
+        Self::from_token(CancellationToken::new())
+    }
+
+    /// Creates a new `Cancel` instance from the given cancellation token.
+    pub fn from_token(token: CancellationToken) -> Self {
         Self(token)
     }
 
@@ -41,5 +47,15 @@ impl Cancel {
     /// Sleeps for the given duration, returning an error if the token is cancelled.
     pub async fn sleep(&self, duration: Duration) -> Result<(), Error> {
         self.race(sleep(duration)).await
+    }
+
+    pub fn spawn(&self) -> Result<(), Error> {
+        let token = self.token().clone();
+        spawn(async move {
+            ctrl_c().await.ok();
+            warn!("⚠️  Received interrupt signal, shutting down...");
+            token.cancel();
+        });
+        Ok(())
     }
 }

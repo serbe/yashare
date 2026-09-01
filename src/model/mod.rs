@@ -1,9 +1,9 @@
-pub(crate) mod fields;
-pub(crate) mod item;
-pub(crate) mod link;
-pub(crate) mod macros;
-pub(crate) mod public_key;
-pub(crate) mod resource;
+mod fields;
+mod item;
+mod link;
+mod macros;
+mod public_key;
+mod resource;
 
 pub use fields::*;
 pub use item::*;

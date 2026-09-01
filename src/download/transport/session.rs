@@ -10,20 +10,14 @@ use tracing::warn;
 
 use crate::{
     Error,
-    api::{error_mapping::map_download_error, http::HttpClient},
+    api::{HttpClient, map_download_error},
     cancel::Cancel,
     download::{
-        model::outcome::Outcome,
-        resume::{
-            manager::ResumeManager,
-            state::{ResumeAction, ResumeState},
-        },
+        model::Outcome,
+        resume::{ResumeAction, ResumeManager, ResumeState},
     },
     error::HttpError,
-    fs::{
-        checksum::{ChecksumSpec, VerificationMode},
-        verifier::FileVerifier,
-    },
+    fs::{ChecksumSpec, FileVerifier, VerificationMode},
     io_error,
 };
 

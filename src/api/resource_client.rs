@@ -12,7 +12,7 @@ use crate::{
     cancel::Cancel,
     error::{ApiError, ClientError},
     model::{Link, PublicKey, Resource, ResourceField, build_fields},
-    retry::{Attempt, policy::RetryPolicy, run},
+    retry::{Attempt, RetryPolicy, run},
 };
 
 /// A client for interacting with the Yandex Share API.

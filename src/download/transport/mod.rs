@@ -1,3 +1,6 @@
-pub(crate) mod factory;
-pub(crate) mod link_provider;
-pub(crate) mod session;
+mod factory;
+mod link_provider;
+mod session;
+
+pub(crate) use factory::SessionFactory;
+pub(crate) use link_provider::DownloadLinkProvider;

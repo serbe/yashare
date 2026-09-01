@@ -13,14 +13,10 @@ use crate::{
     cancel::Cancel,
     download::{
         DownloadContext,
-        model::{
-            job::DownloadJob,
-            outcome::Outcome,
-            stats::{DownloadFailure, DownloadStats},
-        },
-        transport::{factory::SessionFactory, link_provider::DownloadLinkProvider},
+        model::{DownloadFailure, DownloadJob, DownloadStats, Outcome},
+        transport::{DownloadLinkProvider, SessionFactory},
     },
-    fs::checksum::ChecksumSpec,
+    fs::ChecksumSpec,
     io_error,
     retry::{Attempt, run},
 };

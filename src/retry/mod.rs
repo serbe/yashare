@@ -1,10 +1,8 @@
-pub(crate) mod policy;
+mod policy;
 
-use crate::{
-    Error,
-    cancel::Cancel,
-    retry::policy::{RetryDecision, RetryPolicy},
-};
+pub(crate) use policy::{RetryDecision, RetryPolicy};
+
+use crate::{Error, cancel::Cancel};
 
 /// Represents a retryable operation that can be attempted multiple times.
 pub(crate) trait Attempt {

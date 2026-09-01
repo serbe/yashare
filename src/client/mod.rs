@@ -1,4 +1,4 @@
-pub(crate) mod builder;
+mod builder;
 
 use std::{path::Path, sync::Arc};
 
@@ -8,23 +8,18 @@ use tracing::error;
 
 use crate::{
     Error,
-    api::{http::HttpClient, resource_client::ResourceClient},
+    api::{HttpClient, ResourceClient},
     cancel::Cancel,
     client::builder::{ClientConfig, YaShareClientBuilder},
     download::{
         DownloadContext,
-        concurrency::pool::DownloadPool,
-        execution::worker::DownloadWorker,
-        model::{
-            job::DownloadJob,
-            outcome::Outcome,
-            result::DownloadResult,
-            stats::{DownloadFailure, DownloadStats},
-        },
+        concurrency::DownloadPool,
+        execution::DownloadWorker,
+        model::{DownloadFailure, DownloadJob, DownloadResult, DownloadStats, Outcome},
     },
     error::ClientError,
     model::{Item, PublicKey, Resource},
-    walker::{parallel::ParallelWalker, sequential::Walker},
+    walker::{ParallelWalker, Walker},
 };
 
 /// The main client for interacting with Yandex.Disk public shares.

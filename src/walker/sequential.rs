@@ -4,7 +4,7 @@ use futures_util::{Stream, stream::try_unfold};
 
 use crate::{
     Error,
-    api::resource_client::ResourceClient,
+    api::ResourceClient,
     cancel::Cancel,
     model::{Item, PublicKey},
 };

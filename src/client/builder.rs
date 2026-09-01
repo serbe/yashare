@@ -4,8 +4,7 @@ use reqwest::{Client, ClientBuilder};
 use url::Url;
 
 use crate::{
-    Error, client::YaShareClient, error::HttpError, fs::checksum::VerificationMode,
-    retry::policy::RetryPolicy,
+    Error, client::YaShareClient, error::HttpError, fs::VerificationMode, retry::RetryPolicy,
 };
 
 const DEFAULT_API_BASE: &str = "https://cloud-api.yandex.net/v1/disk";

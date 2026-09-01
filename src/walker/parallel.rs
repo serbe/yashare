@@ -9,7 +9,7 @@ use tokio::spawn;
 
 use crate::{
     Error,
-    api::resource_client::ResourceClient,
+    api::ResourceClient,
     cancel::Cancel,
     model::{Item, PublicKey},
 };

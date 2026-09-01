@@ -1,2 +1,5 @@
-pub(crate) mod parallel;
-pub(crate) mod sequential;
+mod parallel;
+mod sequential;
+
+pub(crate) use parallel::ParallelWalker;
+pub(crate) use sequential::Walker;

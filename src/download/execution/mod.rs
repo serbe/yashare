@@ -1,1 +1,3 @@
-pub(crate) mod worker;
+mod worker;
+
+pub(crate) use worker::DownloadWorker;

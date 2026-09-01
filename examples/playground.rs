@@ -1,42 +1,41 @@
-use serde_json::to_string_pretty;
-use tokio_util::sync::CancellationToken;
-use tracing::debug;
-use yashare::Error;
+use std::path::PathBuf;
+
+use tracing::{debug, error, info};
+use yashare::{Cancel, Error, PublicKey, YaShareClient};
 
 const KEY: &str = "https://disk.yandex.ru/d/965DOIGYMrcE-w";
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     tracing_subscriber::fmt()
-        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "debug".to_string()))
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
         .init();
 
-    let cancellation_token = CancellationToken::new();
+    let cancel = Cancel::new();
+    cancel.spawn()?;
 
-    let token_for_signals = cancellation_token.clone();
+    let dest_dir = PathBuf::from("./downloads");
 
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        eprintln!("⚠️  Received interrupt signal, shutting down...");
-        token_for_signals.cancel();
-    });
+    let client = YaShareClient::default();
+    let public_key = PublicKey::parse(KEY)?;
 
-    // let client = YaShareClient::default();
+    debug!("public_key: {}", public_key.as_api_string());
 
-    // let public_key = PublicKey::parse(KEY)?;
+    let result = client.download_all(&public_key, &dest_dir, &cancel).await?;
 
-    // debug!("public_key: {}", public_key.as_api_string());
+    info!("Готово!");
+    info!("Загружено: {}", result.stats.downloaded());
+    info!("Докачано: {}", result.stats.resumed());
+    info!("Пропущено: {}", result.stats.skipped());
+    info!("Ошибок: {}", result.stats.failed());
 
-    // let meta = client.resource_meta(&public_key, None, &cancellation_token).await?;
+    if !result.failures.is_empty() {
+        info!("\nОшибки:");
 
-    // let name = meta.name.clone().unwrap();
-
-    // debug!("name: {:?}", name);
-
-    // let items = meta.embedded.clone().unwrap().items;
-
-    // let value = serde_json::to_value(items).unwrap();
-    // debug!("{}", to_string_pretty(&value).unwrap());
+        for failure in &result.failures {
+            error!("{} -> {}", failure.path, failure.error);
+        }
+    }
 
     Ok(())
 }

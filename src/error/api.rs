@@ -7,7 +7,7 @@ use std::time::Duration;
 use reqwest::StatusCode;
 use serde_json::Value;
 
-use crate::retry::policy::RetryDecision;
+use crate::retry::RetryDecision;
 
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]

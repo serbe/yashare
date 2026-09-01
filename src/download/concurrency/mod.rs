@@ -1,1 +1,3 @@
-pub(crate) mod pool;
+mod pool;
+
+pub(crate) use pool::DownloadPool;

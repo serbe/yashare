@@ -5,9 +5,9 @@ pub(crate) mod resume;
 pub(crate) mod transport;
 
 use crate::{
-    api::{http::HttpClient, resource_client::ResourceClient},
-    fs::checksum::VerificationMode,
-    retry::policy::RetryPolicy,
+    api::{HttpClient, ResourceClient},
+    fs::VerificationMode,
+    retry::RetryPolicy,
 };
 
 /// Represents the context for a download session, including HTTP client, API client, and retry

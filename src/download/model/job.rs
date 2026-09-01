@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     Error,
     error::{ApiError, ClientError},
-    fs::{checksum::ChecksumSpec, path::safe_relative_path},
+    fs::{ChecksumSpec, safe_relative_path},
     model::{Item, PublicKey},
 };
 
