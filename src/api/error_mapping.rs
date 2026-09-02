@@ -9,7 +9,19 @@ use crate::{
     error::{ApiError, HttpError},
 };
 
-/// Represents an error response from the Yandex.Disk API.
+/// Error payload returned by the Yandex.Disk public API.
+///
+/// The Yandex.Disk API returns structured error responses with an error
+/// code, human-readable message, and optional additional details.
+///
+/// # Example
+/// ```json
+/// {
+///   "error": "DiskNotFoundError",
+///   "description": "Resource not found",
+///   "message": "The requested resource does not exist"
+/// }
+/// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ApiErrorResponse {
     pub error: String,
@@ -19,7 +31,22 @@ pub struct ApiErrorResponse {
     pub details: Option<Value>,
 }
 
-/// Maps a non-successful HTTP response from Yandex.Disk API to an `ApiError`.
+/// Converts a non-successful API response into a structured [`ApiError`].
+///
+/// This function attempts to parse the response body as `ApiErrorResponse`.
+/// If parsing succeeds, the structured error is returned. If parsing fails,
+/// a fallback error based on the HTTP status code is returned.
+///
+/// # Special cases
+/// - `DiskNotFoundError` is extracted as `ApiError::NotFound` with the description field, making it
+///   easier for callers to handle "not found" cases specifically.
+/// - The `Retry-After` header is extracted from the response (if present) and attached to the
+///   error, allowing the retry policy to respect the server's suggested wait time.
+///
+/// # Fallback behavior
+/// If the response body cannot be parsed as `ApiErrorResponse` (e.g., the
+/// server returns HTML instead of JSON), the error is converted to
+/// `ApiError::Status` with the status code and any `Retry-After` header.
 pub(crate) async fn map_error_response(response: Response) -> ApiError {
     let status = response.status();
     let retry_after = retry_after(&response);
@@ -40,7 +67,24 @@ pub(crate) async fn map_error_response(response: Response) -> ApiError {
     }
 }
 
-/// Maps a download error from the HTTP response and path.
+/// Converts a failed download response into a user-facing error.
+///
+/// This is specialized for download endpoints (as opposed to metadata APIs).
+/// It translates certain HTTP status codes into semantically rich errors:
+///
+/// - `403 Forbidden` or `410 Gone` → `Error::LinkExpired` — the download link has expired and a
+///   fresh one is needed.
+/// - `416 Range Not Satisfiable` → `Error::RangeNotSatisfiable` — the partial file on disk is
+///   larger than the remote file; restart from scratch.
+/// - `429 Too Many Requests` → `Error::Http(HttpError::RateLimited)` — back off and retry.
+/// - `503 Service Unavailable` → `Error::Http(HttpError::ServiceUnavailable)` — server is
+///   temporarily overloaded.
+/// - Other status codes → `Error::Http(HttpError::UnexpectedStatus)` — fallback for unexpected
+///   responses.
+///
+/// # Arguments
+/// - `response`: The HTTP response that failed.
+/// - `path`: The file path being downloaded, used for context in error messages.
 pub(crate) fn map_download_error(response: &Response, path: &Path) -> Error {
     let status = response.status();
     let retry_after = retry_after(response);
@@ -58,7 +102,11 @@ pub(crate) fn map_download_error(response: &Response, path: &Path) -> Error {
     }
 }
 
-/// Extracts the `Retry-After` header from the response, if present.
+/// Extracts the `Retry-After` header as a [`Duration`].
+///
+/// The header may be specified as an integer number of seconds, or as an
+/// HTTP date. This function only parses the integer form, which is the most
+/// common for rate-limiting responses.
 fn retry_after(response: &Response) -> Option<Duration> {
     response
         .headers()

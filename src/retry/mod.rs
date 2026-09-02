@@ -4,14 +4,52 @@ pub(crate) use policy::{RetryDecision, RetryPolicy};
 
 use crate::{Error, cancel::Cancel};
 
-/// Represents a retryable operation that can be attempted multiple times.
+/// A retryable operation that can be attempted multiple times.
+///
+/// Implementations of `Attempt` encapsulate a single unit of work that may
+/// fail transiently and be retried. The `attempt` method is called
+/// repeatedly by the retry loop until it succeeds, the retry policy says to
+/// abort, or the operation is cancelled.
+///
+/// # Thread safety
+/// `attempt` is called with `&mut self`, so the implementation can maintain
+/// state across retry attempts (e.g., for exponential backoff feedback, or
+/// to avoid re-initializing on each attempt).
 pub(crate) trait Attempt {
+    /// The type of value returned on success.
     type Output;
 
+    /// Performs one attempt of the operation.
+    ///
+    /// # Arguments
+    /// - `attempt_no`: The 1-based attempt number. The first attempt is 1, the second is 2, etc.
+    ///
+    /// # Returns
+    /// `Ok(Output)` on success, `Err(Error)` on failure. The retry loop
+    /// will decide whether to retry based on the policy.
     async fn attempt(&mut self, attempt_no: usize) -> Result<Self::Output, Error>;
 }
 
-/// Runs a retryable operation according to the given policy and cancellation token.
+/// Executes a retryable operation according to a policy and cancellation token.
+///
+/// This is the main entry point for retry logic. It repeatedly calls
+/// `op.attempt()` up to the policy's maximum attempts, applying the policy's
+/// backoff between attempts.
+///
+/// # Behavior
+/// 1. Before each attempt, checks the cancellation token.
+/// 2. Calls `op.attempt()`.
+/// 3. On success, returns the value immediately.
+/// 4. On `Error::Cancelled`, propagates the cancellation without retrying.
+/// 5. On other errors, consults the policy's `decide()` method.
+///    - `RetryDecision::Abort` → returns the error immediately.
+///    - `RetryDecision::RetryAfter(delay)` → sleeps for `delay` and retries.
+/// 6. If all attempts are exhausted, returns the last error.
+///
+/// # Panics
+/// This function will panic if the operation returns `Error::Cancelled` and
+/// there is no last error to return after all attempts are exhausted (this
+/// should never happen in practice).
 pub(crate) async fn run<A: Attempt>(
     policy: &RetryPolicy,
     cancel: &Cancel,

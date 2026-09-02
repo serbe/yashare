@@ -2,9 +2,33 @@ use std::path::PathBuf;
 
 use crate::error::{ClientError, Error, Result};
 
+/// Characters that are illegal in Windows filenames.
+///
+/// This set is used to sanitize paths from the API, which may contain
+/// characters that are valid on Yandex.Disk but invalid on the local
+/// filesystem.
 const INVALID_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
-/// Sanitizes a relative path by replacing invalid characters and trimming leading slashes.
+/// Converts a Yandex.Disk path to a safe relative filesystem path.
+///
+/// Yandex.Disk paths use forward slashes (`/`) as path separators and may
+/// contain characters that are invalid or reserved on Windows. This function
+/// normalizes the path, removes leading slashes, and sanitizes each component.
+///
+/// # Security
+/// This function rejects paths that attempt directory traversal using `..`
+/// or refer to the current directory using `.`. This prevents attackers from
+/// using crafted paths to escape the intended destination directory.
+///
+/// # Windows compatibility
+/// Reserved filenames like `CON`, `PRN`, `AUX`, etc., are prefixed with an
+/// underscore to avoid conflicts. Trailing spaces and dots are stripped, as
+/// Windows treats them as insignificant.
+///
+/// # Errors
+/// Returns `ClientError::InvalidPath` if the path is empty, contains `..`
+/// or `.` components, or consists entirely of invalid characters after
+/// sanitization.
 pub fn safe_relative_path(disk_path: &str) -> Result<PathBuf> {
     let normalized = disk_path.replace('\\', "/");
     let normalized = normalized.trim_start_matches('/');
@@ -28,8 +52,17 @@ pub fn safe_relative_path(disk_path: &str) -> Result<PathBuf> {
     Ok(parts.iter().collect())
 }
 
-/// Sanitizes a filename component by replacing invalid characters and trimming leading/trailing
-/// spaces/dots.
+/// Sanitizes a single filename component.
+///
+/// This function:
+/// - Trims leading and trailing whitespace.
+/// - Replaces control characters and invalid filesystem characters with `_`.
+/// - Strips trailing spaces and dots.
+/// - Prefixes reserved Windows names with `_`.
+///
+/// # Returns
+/// A sanitized filename. If the input consists entirely of invalid
+/// characters or whitespace, returns `"_"` as a fallback.
 pub fn safe_filename_component(name: &str) -> String {
     let mut result = name.trim().to_string();
 

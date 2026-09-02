@@ -7,15 +7,35 @@ use reqwest::{
 
 use crate::{Error, error::HttpError};
 
+/// Action to take when resuming a partial download.
+///
+/// Determined by inspecting the existing partial file (if any) and comparing
+/// its size to the expected file size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResumeAction {
+    /// No partial file exists; start from the beginning.
     Start,
+
+    /// A partial file exists and is smaller than expected; resume from `offset`.
     Resume(u64),
+
+    /// A partial file exists but is larger than expected, or the server
+    /// rejected the range request; restart from scratch.
+    ///
+    /// The `corrupt_size` is the size of the partial file that will be
+    /// discarded.
     Restart { corrupt_size: u64 },
+
+    /// A partial file exists and matches the expected size; no download
+    /// needed, just finalize (rename and verify).
     Finalize,
 }
 
 impl ResumeAction {
+    /// Returns the byte offset to start downloading from.
+    ///
+    /// For `Resume`, this is the size of the existing partial file.
+    /// For all other variants, this is 0.
     pub(crate) fn offset(self) -> u64 {
         match self {
             Self::Resume(offset) => offset,
@@ -23,47 +43,75 @@ impl ResumeAction {
         }
     }
 
+    /// Returns `true` if the partial file should be opened in append mode.
+    ///
+    /// Only `Resume` requires append mode; all other variants truncate or
+    /// create a new file.
     pub(crate) fn append(self) -> bool {
         matches!(self, Self::Resume(_))
     }
 
+    /// Returns `true` if this action requires an actual download.
+    ///
+    /// `Finalize` does not require a download — the file is already complete.
     pub(crate) fn needs_download(self) -> bool {
         !matches!(self, Self::Finalize)
     }
 }
 
+/// The current state of a resume attempt.
+///
+/// Contains the path to the partial file and the action to take.
 #[derive(Debug, Clone)]
 pub(crate) struct ResumeState {
+    /// Path to the `.part` file on disk.
     pub(crate) part_path: PathBuf,
+    /// The action to take based on the partial file state.
     pub(crate) action: ResumeAction,
 }
 
 impl ResumeState {
+    /// Returns `true` if the download will resume from a partial file.
     pub(crate) fn is_resuming(&self) -> bool {
         matches!(self.action, ResumeAction::Resume(_))
     }
 
+    /// Returns the byte offset to start downloading from.
     pub(crate) fn offset(&self) -> u64 {
         self.action.offset()
     }
 
+    /// Returns `true` if the partial file should be opened in append mode.
     pub(crate) fn append(&self) -> bool {
         self.action.append()
     }
 
+    /// Returns `true` if this state requires an actual download.
     pub(crate) fn needs_download(&self) -> bool {
         self.action.needs_download()
     }
 }
 
+/// Determines the resume state based on the partial file's size.
+///
+/// This is a pure function of three inputs: the partial file path, its
+/// existing size, and the expected file size.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ResumeStateManager;
 
 impl ResumeStateManager {
+    /// Creates a new state manager.
     pub(crate) fn new() -> Self {
         Self
     }
 
+    /// Determines the resume action based on the partial file's size.
+    ///
+    /// # Logic
+    /// - `existing_size == 0` → `Start` (no partial file, or empty)
+    /// - `existing_size < expected_size` → `Resume(existing_size)`
+    /// - `existing_size == expected_size` → `Finalize`
+    /// - `existing_size > expected_size` → `Restart { corrupt_size }`
     pub(crate) fn determine_state(
         &self,
         part_path: PathBuf,
@@ -80,6 +128,14 @@ impl ResumeStateManager {
         ResumeState { part_path, action }
     }
 
+    /// Adds a `Range` header to the request if resuming.
+    ///
+    /// If the state is `Resume(offset)`, this adds `Range: bytes={offset}-`.
+    /// All other states leave the headers unchanged.
+    ///
+    /// # Errors
+    /// Returns `HttpError::InvalidHeader` if the header value cannot be
+    /// constructed.
     pub(crate) fn apply_range_header(
         &self,
         headers: &mut HeaderMap,
@@ -100,6 +156,19 @@ impl ResumeStateManager {
         Ok(())
     }
 
+    /// Validates the server's response to a range request.
+    ///
+    /// For a valid resume attempt, the server should return:
+    /// - Status `206 Partial Content`
+    /// - `Content-Range: bytes {start}-{end}/{total}` where `start == offset` and `total ==
+    ///   expected_size`
+    ///
+    /// If the server returns `200 OK`, the partial file is treated as
+    /// corrupt and the action becomes `Restart`.
+    ///
+    /// # Errors
+    /// Returns `Error::InvalidContentRange` if the `Content-Range` header
+    /// does not match expectations.
     pub(crate) fn validate_response(
         &self,
         state: &ResumeState,
@@ -134,6 +203,15 @@ impl ResumeStateManager {
         }
     }
 
+    /// Parses a `Content-Range` header and checks that it starts at the
+    /// expected offset and matches the expected total size.
+    ///
+    /// # Format
+    /// The header should be `bytes {start}-{end}/{total}`.
+    ///
+    /// # Returns
+    /// `true` if the header is valid and matches expectations, `false`
+    /// otherwise.
     fn content_range_starts_at(
         &self,
         header_value: &str,

@@ -5,16 +5,57 @@ use urlencoding::decode;
 
 use crate::{Error, error::ClientError};
 
-/// Represents a public key for a Yandex.Disk resource.
+/// A Yandex.Disk public resource identifier.
+///
+/// Public keys identify shared Yandex.Disk resources (files or folders)
+/// and can be represented in three forms:
+///
+/// 1. **Folder URL**: `https://disk.yandex.ru/d/...` — a folder share.
+/// 2. **File URL**: `https://disk.yandex.ru/i/...` — a file share.
+/// 3. **Hash**: `A6v3K...` — a raw hash from a `public/?hash=` URL.
+///
+/// # Parsing
+/// The `PublicKey::parse` and `FromStr` impl accept any of these forms,
+/// including URL-encoded strings. This allows the same function to handle
+/// raw user input, URL-encoded query parameters, and direct API keys.
+///
+/// # Usage
+/// The `as_api_string()` method returns the key in the format expected by
+/// the Yandex.Disk API's `public_key` query parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PublicKey {
+    /// A folder share URL (`https://disk.yandex.ru/d/...`).
     Folder(String),
+
+    /// A file share URL (`https://disk.yandex.ru/i/...`).
     File(String),
+
+    /// A raw hash string (from a `public/?hash=` URL).
     Hash(String),
 }
 
 impl PublicKey {
-    /// Parses URL or hash string.
+    /// Parses a public key from a URL or hash string.
+    ///
+    /// This is the primary constructor for `PublicKey`. It handles:
+    /// - Full URLs: `https://disk.yandex.ru/d/...` or `https://disk.yandex.ru/i/...`
+    /// - `public/?hash=` URLs: these are parsed into `Hash` with the hash value.
+    /// - Raw hash strings: used directly as `Hash`.
+    /// - URL-encoded input: automatically decoded before parsing.
+    ///
+    /// # Errors
+    /// Returns `ClientError::InvalidPublicKey` if the input is empty, not a
+    /// valid URL, or not a recognized Yandex.Disk URL format.
+    ///
+    /// # Examples
+    /// ```rust
+    /// use yashare::PublicKey;
+    ///
+    /// let folder = PublicKey::parse("https://disk.yandex.ru/d/abc123")?;
+    /// let hash = PublicKey::parse("A6v3K...")?;
+    /// let encoded = PublicKey::parse("https%3A%2F%2Fdisk.yandex.ru%2Fd%2Fabc123")?;
+    /// # Ok::<(), yashare::Error>(())
+    /// ```
     pub fn parse<S: AsRef<str>>(input: S) -> Result<Self, Error> {
         let input = input.as_ref().trim();
         if input.is_empty() {
@@ -30,7 +71,16 @@ impl PublicKey {
         Ok(PublicKey::Hash(decoded))
     }
 
-    /// Parses a public key from a URL string.
+    /// Parses a public key from a Yandex.Disk URL.
+    ///
+    /// Recognized URL patterns:
+    /// - `https://disk.yandex.ru/d/<id>` → `PublicKey::Folder`
+    /// - `https://disk.yandex.ru/i/<id>` → `PublicKey::File`
+    /// - `https://disk.yandex.ru/public/?hash=<hash>` → `PublicKey::Hash`
+    ///
+    /// # Errors
+    /// Returns `ClientError::InvalidPublicKey` if the URL is not valid or
+    /// does not match any recognized pattern.
     fn parse_url(url_str: &str) -> Result<Self, Error> {
         let url = Url::parse(url_str).map_err(|_| {
             Error::Client(ClientError::InvalidPublicKey(format!("invalid URL: {}", url_str)))
@@ -66,7 +116,12 @@ impl PublicKey {
         }
     }
 
-    /// Returns the public key as a string suitable for use in API requests.
+    /// Returns the public key in the format expected by the Yandex.Disk API.
+    ///
+    /// For `Folder` and `File`, this returns the full URL. For `Hash`, this
+    /// returns the raw hash string.
+    ///
+    /// This is the value to use in the API's `public_key` query parameter.
     pub fn as_api_string(&self) -> String {
         match self {
             PublicKey::Folder(url) | PublicKey::File(url) => url.clone(),
@@ -74,22 +129,22 @@ impl PublicKey {
         }
     }
 
-    /// Returns whether the public key represents a folder.
+    /// Returns `true` if this public key represents a folder share.
     pub fn is_folder(&self) -> bool {
         matches!(self, PublicKey::Folder(_))
     }
 
-    /// Returns whether the public key represents a file.
+    /// Returns `true` if this public key represents a file share.
     pub fn is_file(&self) -> bool {
         matches!(self, PublicKey::File(_))
     }
 
-    /// Returns whether the public key represents a hash.
+    /// Returns `true` if this public key is a raw hash.
     pub fn is_hash(&self) -> bool {
         matches!(self, PublicKey::Hash(_))
     }
 
-    /// Returns the folder URL if the public key represents a folder, otherwise `None`.
+    /// Returns the folder URL if this is a `Folder` key.
     pub fn as_folder(&self) -> Option<&str> {
         match self {
             PublicKey::Folder(url) => Some(url),
@@ -97,7 +152,7 @@ impl PublicKey {
         }
     }
 
-    /// Returns the file URL if the public key represents a file, otherwise `None`.
+    /// Returns the file URL if this is a `File` key.
     pub fn as_file(&self) -> Option<&str> {
         match self {
             PublicKey::File(url) => Some(url),
@@ -105,7 +160,7 @@ impl PublicKey {
         }
     }
 
-    /// Returns the hash if the public key represents a hash, otherwise `None`.
+    /// Returns the hash if this is a `Hash` key.
     pub fn as_hash(&self) -> Option<&str> {
         match self {
             PublicKey::Hash(hash) => Some(hash),
@@ -115,6 +170,8 @@ impl PublicKey {
 }
 
 /// Parses a public key from a string.
+///
+/// This is the `FromStr` implementation used by `"https://...".parse()`.
 impl FromStr for PublicKey {
     type Err = Error;
 
@@ -123,7 +180,6 @@ impl FromStr for PublicKey {
     }
 }
 
-/// Formats a public key as a string.
 impl std::fmt::Display for PublicKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

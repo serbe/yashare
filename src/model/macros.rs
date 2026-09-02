@@ -1,3 +1,49 @@
+/// Generates a field enum for Yandex.Disk API response fields.
+///
+/// This macro creates an enum that represents fields in Yandex.Disk's
+/// `?fields` query parameter syntax. Each variant encodes a field path that
+/// can be rendered into the comma-separated field list expected by the API.
+///
+/// # Syntax
+/// ```text
+/// field_enum! {
+///     pub enum Name {
+///         leaf {
+///             VARIANT => "field.path",
+///             ...
+///         }
+///         nested {
+///             VARIANT(OtherEnum) => "parent.field",
+///             ...
+///         }
+///     }
+/// }
+/// ```
+///
+/// # Generated code
+/// The macro generates:
+/// - The enum type with `leaf` and `nested` variants.
+/// - An implementation of `FieldPath` that renders the field path to a string.
+/// - An `all()` method that returns a `Vec` of all variants (including nested ones).
+///
+/// # Example
+/// ```rust
+/// field_enum! {
+///     pub enum ResourceField {
+///         leaf {
+///             Name => "name",
+///             Path => "path",
+///         }
+///         nested {
+///             Embedded(EmbeddedField) => "_embedded",
+///         }
+///     }
+/// }
+/// ```
+///
+/// This generates `ResourceField::Name` rendering as `"name"`,
+/// and `ResourceField::Embedded(EmbeddedField::Items)` rendering as
+/// `"_embedded.items"`.
 #[macro_export]
 macro_rules! field_enum {
     (
@@ -28,6 +74,11 @@ macro_rules! field_enum {
         }
 
         impl $name {
+            /// Returns a `Vec` containing all possible variants of this field enum.
+            ///
+            /// This includes both leaf variants and all nested variants from
+            /// the nested field types. The order is deterministic and follows
+            /// the order of declaration.
             pub fn all() -> Vec<Self> {
                 let result: Vec<Self> = vec![$( Self::$lvariant ),*];
                 $(

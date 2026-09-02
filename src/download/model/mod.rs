@@ -5,5 +5,6 @@ mod stats;
 
 pub(crate) use job::DownloadJob;
 pub(crate) use outcome::Outcome;
-pub(crate) use result::DownloadResult;
-pub(crate) use stats::{DownloadFailure, DownloadStats};
+pub use result::DownloadResult;
+pub(crate) use stats::DownloadFailure;
+pub use stats::DownloadStats;

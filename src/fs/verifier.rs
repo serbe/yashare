@@ -11,20 +11,53 @@ use tokio::{
 
 use crate::fs::checksum::{ChecksumSpec, VerificationMode};
 
-/// Verifies the size and checksum of a file.
+/// Verifies file integrity by checking size and/or cryptographic hashes.
+///
+/// `FileVerifier` uses a reusable internal buffer to avoid allocating new
+/// memory for each file verification. The buffer is sized at construction
+/// time and reused across all verification operations on the same verifier
+/// instance.
+///
+/// # Performance
+/// For large files (hundreds of megabytes or more), checksum verification
+/// requires reading the entire file. The buffer size determines how much
+/// data is read at a time, balancing syscall overhead against memory usage.
+///
+/// # Thread safety
+/// `FileVerifier` is not `Sync` because it contains a mutable buffer. Each
+/// worker should have its own verifier instance to avoid contention.
 pub(crate) struct FileVerifier {
     buffer: BytesMut,
 }
 
 impl FileVerifier {
-    /// Creates a new `FileVerifier` with the specified buffer size.
+    /// Creates a new verifier with the specified internal buffer size.
+    ///
+    /// The buffer is allocated immediately. The buffer size should be chosen
+    /// to balance throughput (larger buffers reduce syscall overhead) against
+    /// memory usage (smaller buffers reduce memory pressure under high
+    /// concurrency).
     pub(crate) fn new(buffer_size: usize) -> Self {
         let mut buffer = BytesMut::with_capacity(buffer_size);
         buffer.resize(buffer_size, 0);
         Self { buffer }
     }
 
-    /// Verifies that the file at the given path matches the expected size and checksum.
+    /// Checks whether an existing file matches the expected size and
+    /// optional checksum.
+    ///
+    /// This is used during pre-download checks to skip already-downloaded
+    /// files. The function returns `false` if the file is missing or if
+    /// either the size or checksum check fails.
+    ///
+    /// # Mode dependence
+    /// - `SizeOnly`: only the file size is checked.
+    /// - `SizeAndChecksum`: both size and checksum are checked. If the size differs, the checksum
+    ///   is never computed.
+    ///
+    /// # Errors
+    /// Returns `std::io::Error` for filesystem errors, including permission
+    /// issues, I/O failures, and invalid file paths.
     pub(crate) async fn file_matches(
         &mut self,
         path: &Path,
@@ -48,7 +81,14 @@ impl FileVerifier {
         }
     }
 
-    /// Verifies that the file at the given path matches the expected checksum.
+    /// Verifies that a file matches the expected checksum.
+    ///
+    /// This reads the entire file and computes the specified hash. The
+    /// comparison is case-insensitive, as checksums are typically provided
+    /// in lowercase but may be returned uppercase by the API.
+    ///
+    /// # Errors
+    /// Returns `std::io::Error` if the file cannot be opened or read.
     pub(crate) async fn verify(
         &mut self,
         path: &Path,
@@ -72,7 +112,10 @@ impl FileVerifier {
         }
     }
 
-    /// Hashes the file at the given path using the specified digest algorithm.
+    /// Computes a single hash of a file using the specified digest algorithm.
+    ///
+    /// The file is read in chunks, and the hash is updated incrementally.
+    /// This avoids loading the entire file into memory.
     async fn hash_file<D: Digest + Default>(&mut self, path: &Path) -> std::io::Result<String> {
         let mut file = File::open(path).await?;
         let mut hasher = D::default();
@@ -88,7 +131,11 @@ impl FileVerifier {
         Ok(encode(hasher.finalize()))
     }
 
-    /// Hashes the file at the given path using both MD5 and SHA-256 algorithms.
+    /// Computes both MD5 and SHA-256 hashes of a file in a single pass.
+    ///
+    /// Computing both hashes simultaneously is more efficient than computing
+    /// them separately, as the file is read only once. The hashes are
+    /// returned as hex strings.
     async fn hash_file_both(&mut self, path: &Path) -> std::io::Result<(String, String)> {
         let mut file = File::open(path).await?;
         let mut md5 = Md5::default();
@@ -114,7 +161,8 @@ mod tests {
     use tokio::fs::write;
 
     use super::*;
-    use crate::CHUNK_SIZE;
+
+    const CHUNK_SIZE: usize = 1024 * 1024;
 
     #[tokio::test]
     async fn size_only_mode_skips_hashing() {

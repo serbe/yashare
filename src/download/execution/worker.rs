@@ -9,11 +9,12 @@ use tokio::fs::create_dir_all;
 use tracing::{debug, error, warn};
 
 use crate::{
-    CHUNK_SIZE, Error,
+    Error,
     cancel::Cancel,
     download::{
         DownloadContext,
         model::{DownloadFailure, DownloadJob, DownloadStats, Outcome},
+        progress::ProgressEvent,
         transport::{DownloadLinkProvider, SessionFactory},
     },
     fs::ChecksumSpec,
@@ -22,8 +23,17 @@ use crate::{
 };
 
 /// A single download attempt for a file.
+///
+/// On error, emits a `Failed { retrying: true }` progress event immediately —
+/// at this level we can't yet tell whether the retry policy or the caller
+/// will actually retry, but from the observer's point of view "this attempt
+/// failed but we're not done yet" is exactly what happened. If every attempt
+/// is exhausted, `DownloadWorker::download_job` emits one final
+/// `Failed { retrying: false }` on top.
 struct DownloadAttempt<'a> {
     worker: &'a mut DownloadWorker,
+    job_id: u64,
+    item_path: &'a Arc<str>,
     url: &'a str,
     destination: &'a Path,
     expected_size: u64,
@@ -35,15 +45,29 @@ impl<'a> Attempt for DownloadAttempt<'a> {
     type Output = Outcome;
 
     async fn attempt(&mut self, _attempt_no: usize) -> Result<Outcome, Error> {
-        self.worker
+        let result = self
+            .worker
             .try_download_once(
+                self.job_id,
+                self.item_path,
                 self.url,
                 self.destination,
                 self.expected_size,
                 self.checksum,
                 self.cancel,
             )
-            .await
+            .await;
+
+        if let Err(err) = &result {
+            self.worker.ctx.progress.emit(ProgressEvent::Failed {
+                job_id: self.job_id,
+                path: self.item_path.clone(),
+                error: err.to_string(),
+                retrying: true,
+            });
+        }
+
+        result
     }
 }
 
@@ -98,21 +122,27 @@ impl DownloadWorker {
             let path = job.item_path.clone();
 
             match self.download_job(job, &cancel).await {
-                Ok(outcome) => stats.record(outcome, size),
+                Ok(outcome) => {
+                    self.ctx.progress.note_bytes_done(size);
+                    stats.record(outcome, size);
+                },
 
                 Err(Error::Cancelled) => {
                     stats.record_failure();
-                    failures
-                        .lock()
-                        .unwrap()
-                        .push(DownloadFailure { path, error: Error::Cancelled });
+                    failures.lock().unwrap().push(DownloadFailure {
+                        path: path.to_string(),
+                        error: Error::Cancelled,
+                    });
                     break;
                 },
 
                 Err(err) => {
                     stats.record_failure();
-                    error!(worker = self.id, path, error = %err, "download failed");
-                    failures.lock().unwrap().push(DownloadFailure { path, error: err });
+                    error!(worker = self.id, path = %path, error = %err, "download failed");
+                    failures
+                        .lock()
+                        .unwrap()
+                        .push(DownloadFailure { path: path.to_string(), error: err });
                 },
             }
         }
@@ -129,9 +159,20 @@ impl DownloadWorker {
         for link_attempt in 1..=self.links.max_attempts() {
             let link = self.links.get_link(&job, link_attempt, cancel).await?;
 
-            match self.download_to(&link, &job.destination, job.size, &job.checksum, cancel).await {
+            match self
+                .download_to(
+                    job.job_id,
+                    &job.item_path,
+                    &link,
+                    &job.destination,
+                    job.size,
+                    &job.checksum,
+                    cancel,
+                )
+                .await
+            {
                 Ok(outcome) => return Ok(outcome),
-                Err(err) if err.is_expired_link() => {
+                Err(err) if err.is_expired_link() && link_attempt < self.links.max_attempts() => {
                     warn!(
                         worker = self.id,
                         path = %job.item_path,
@@ -141,21 +182,41 @@ impl DownloadWorker {
                     last_error = Some(err);
                     continue;
                 },
-                Err(err) => return Err(err),
+                Err(err) => {
+                    self.emit_final_failure(&job, &err);
+                    return Err(err);
+                },
             }
         }
 
-        Err(Error::LinkExpired { path: job.item_path.clone() }).inspect_err(|_| {
-            if let Some(prev) = last_error {
-                debug!("last transient error before giving up: {prev}");
-            }
-        })
+        let err = Error::LinkExpired { path: job.item_path.to_string() };
+        self.emit_final_failure(&job, &err);
+
+        if let Some(prev) = last_error {
+            debug!("last transient error before giving up: {prev}");
+        }
+        Err(err)
+    }
+
+    /// Emits the single, final `Failed { retrying: false }` event for a job
+    /// that has exhausted every retry avenue (link attempts and the retry
+    /// policy) and will not be attempted again.
+    fn emit_final_failure(&self, job: &DownloadJob, err: &Error) {
+        self.ctx.progress.emit(ProgressEvent::Failed {
+            job_id: job.job_id,
+            path: job.item_path.clone(),
+            error: err.to_string(),
+            retrying: false,
+        });
     }
 
     /// Downloads a single file to the specified destination, retrying as needed until success or
     /// cancellation.
+    #[allow(clippy::too_many_arguments)]
     async fn download_to(
         &mut self,
+        job_id: u64,
+        item_path: &Arc<str>,
         url: &str,
         destination: &Path,
         expected_size: u64,
@@ -182,6 +243,8 @@ impl DownloadWorker {
             cancel,
             DownloadAttempt {
                 worker: self,
+                job_id,
+                item_path,
                 url,
                 destination,
                 expected_size,
@@ -193,8 +256,11 @@ impl DownloadWorker {
     }
 
     /// Tries to download a single file once, without retrying.
+    #[allow(clippy::too_many_arguments)]
     async fn try_download_once(
         &mut self,
+        job_id: u64,
+        item_path: &Arc<str>,
         url: &str,
         destination: &Path,
         expected_size: u64,
@@ -203,7 +269,7 @@ impl DownloadWorker {
     ) -> Result<Outcome, Error> {
         self.sessions
             .session()
-            .run(url, destination, expected_size, checksum, cancel)
+            .run(job_id, item_path, url, destination, expected_size, checksum, cancel)
             .await
     }
 
